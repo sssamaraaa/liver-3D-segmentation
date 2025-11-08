@@ -1,6 +1,5 @@
 import nibabel as nib
 import matplotlib.pyplot as plt
-import numpy as np
 import random
 
 
