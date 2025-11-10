@@ -72,12 +72,13 @@ def intensity_clip_normalize(volume, clip_min=-200, clip_max=250):
 
 class LiverPatchDataset(Dataset):
     def __init__(self, image_paths, mask_paths, patch_size=(64,128,128),
-                 samples_per_volume=16, transform=None,
+                 samples_per_volume=16, pos_ratio=0.5, transform=None,
                  resample_spacing=None):
         self.image_paths = image_paths
         self.mask_paths = mask_paths
         self.patch_size = tuple(patch_size)
         self.samples_per_volume = samples_per_volume
+        self.pos_ratio = pos_ratio
         self.transform = transform
         self.resample_spacing = resample_spacing # expensive operation (not implemented yet)
 
