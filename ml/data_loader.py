@@ -56,7 +56,7 @@ def augment_ct3d(img, mask):
 
 def load_nifti(path):
     nii = nib.load(path)
-    img = nii.get_fdata().astype(np.float32)
+    img = np.asarray(nii.dataobj, dtype=np.float32)
     spacing = nii.header.get_zooms()  
     return img, spacing
 
