@@ -58,6 +58,7 @@ def preprocess_case(img_path, mask_path, out_img_dir, out_mask_dir, new_spacing)
         "affine": affine.tolist(),
         "image_path": os.path.join(out_img_dir, f"{case_id}.npy"),
         "mask_path": os.path.join(out_mask_dir, f"{case_id}.npy"),
+        "hu_clip": {"min": -200, "max": 250}
     }
 
 def main():
