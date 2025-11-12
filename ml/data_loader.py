@@ -1,8 +1,7 @@
-import nibabel as nib
 import numpy as np
 import random
 from torch.utils.data import Dataset
-from scipy.ndimage import zoom, rotate, gaussian_filter, map_coordinates
+from scipy.ndimage import rotate, gaussian_filter, map_coordinates
 
 
 def augment_ct3d(img, mask):
@@ -54,33 +53,16 @@ def augment_ct3d(img, mask):
 
     return img.astype(np.float32), mask.astype(np.float32)
 
-def load_nifti(path):
-    nii = nib.load(path)
-    img = np.asarray(nii.dataobj, dtype=np.float32)
-    spacing = nii.header.get_zooms()  
-    return img, spacing
-
-def resample_to_spacing(volume, orig_spacing, new_spacing):
-    factors = tuple([o / n for o, n in zip(orig_spacing, new_spacing)])
-    vol_rs = zoom(volume, factors, order=1)  
-    return vol_rs
-
-def intensity_clip_normalize(volume, clip_min=-200, clip_max=250):
-    vol = np.clip(volume, clip_min, clip_max)
-    vol = (vol - vol.mean()) / (vol.std() + 1e-8)
-    return vol.astype(np.float32)
 
 class LiverPatchDataset(Dataset):
     def __init__(self, image_paths, mask_paths, patch_size=(64,128,128),
-                 samples_per_volume=16, pos_ratio=0.5, transform=None,
-                 resample_spacing=None):
+                 samples_per_volume=16, pos_ratio=0.5, transform=None):
         self.image_paths = image_paths
         self.mask_paths = mask_paths
         self.patch_size = tuple(patch_size)
         self.samples_per_volume = samples_per_volume
         self.pos_ratio = pos_ratio
         self.transform = transform
-        self.resample_spacing = resample_spacing # expensive operation (not implemented yet)
 
         assert len(image_paths) == len(mask_paths), "Images and masks mismatch"
 
@@ -90,10 +72,8 @@ class LiverPatchDataset(Dataset):
     def __getitem__(self, idx):
         volume_idx = idx // self.samples_per_volume
 
-        img, _ = load_nifti(self.image_paths[volume_idx])
-        mask, _ = load_nifti(self.mask_paths[volume_idx])
-
-        img = intensity_clip_normalize(img, clip_min=-200, clip_max=250)
+        img = np.load(self.image_paths[volume_idx], mmap_mode="r").astype(np.float32)
+        mask = np.load(self.mask_paths[volume_idx], mmap_mode="r").astype(np.float32)
 
         dz, dy, dx = self.patch_size
         zmax, ymax, xmax = img.shape
