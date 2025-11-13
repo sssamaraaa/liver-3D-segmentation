@@ -26,7 +26,6 @@ def augment_ct3d(img, mask):
         shift = random.uniform(-0.1, 0.1)
         img = img * scale + shift
 
-    # gamma correction (contrast)
     if random.random() < 0.3:
         gamma = random.uniform(0.7, 1.5)
         img_min, img_max = img.min(), img.max()
@@ -35,6 +34,7 @@ def augment_ct3d(img, mask):
         img = img * (img_max - img_min) + img_min
 
     # Gaussian noise 
+    if random.random() < 0.5:
         noise = np.random.normal(0, 0.02, size=img.shape)
         img = img + noise
 
