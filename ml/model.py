@@ -2,12 +2,22 @@ import torch
 import torch.nn as nn
 
 
-def dice_coef(pred, target, eps=1e-6):
+def dice_coef(pred, target, eps=1e-6, ignore_empty=True):
+    """Dice, excluding completely empty targets (gt.sum()==0)"""
     pred = pred.contiguous().view(pred.shape[0], -1)
     target = target.contiguous().view(target.shape[0], -1)
+
+    if ignore_empty:
+        valid_mask = target.sum(dim=1) > 0
+        if valid_mask.any():
+            pred = pred[valid_mask]
+            target = target[valid_mask]
+        else:
+            return torch.tensor(1.0, device=pred.device)
+
     inter = (pred * target).sum(-1)
     denom = pred.sum(-1) + target.sum(-1)
-    dice = (2 * inter + eps) / (denom + eps)
+    dice = (2 * inter) / (denom + eps)
     return dice.mean()
 
 class ConvBlock(nn.Module):
