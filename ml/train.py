@@ -71,7 +71,8 @@ def train(args):
     )
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size, shuffle=True,
-        num_workers=args.num_workers, pin_memory=True
+        num_workers=args.num_workers, pin_memory=True,
+        persistent_workers=True
     )
 
     # model
@@ -148,8 +149,13 @@ def train(args):
                         )
 
                         pred = (prob_map >= 0.5).astype(np.uint8)
+
+                        if gt.sum() == 0:
+                            continue
+
                         inter = (pred * gt).sum()
-                        dice = (2 * inter) / (pred.sum() + gt.sum() + 1e-8)
+                        denom = pred.sum() + gt.sum()
+                        dice = 2 * inter / denom if denom > 0 else 1.0
                         dices.append(dice)
 
                 mean_dice = float(np.mean(dices))
