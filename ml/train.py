@@ -158,7 +158,12 @@ def train(args):
                         dice = 2 * inter / denom if denom > 0 else 1.0
                         dices.append(dice)
 
-                mean_dice = float(np.mean(dices))
+                        if len(dices) == 0:
+                            print("Warning: no valid dice scores (all GT empty or skipped). Setting mean_dice = 0.")
+                            mean_dice = 0.0
+                        else:
+                            mean_dice = float(np.mean(dices))
+
                 print(f"Epoch {epoch} validation mean Dice: {mean_dice:.4f}")
 
                 if mean_dice > best_val_dice:
