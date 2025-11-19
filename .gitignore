@@ -3,4 +3,6 @@
 datasets/
 
 ml/results
-
+ml/test
+ml/metrics
+ml/__pycache__
