@@ -4,6 +4,9 @@ import random
 import numpy as np
 import argparse
 import torch
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 from glob import glob
@@ -13,6 +16,41 @@ from data_loader import LiverPatchDataset, augment_ct3d
 from model import UNet3D, DiceBCELoss
 from inference import sliding_window_inference
 
+
+def save_metrics(avg_epoch_losses, avg_epoch_dices, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+
+    if not avg_epoch_losses:
+        print("[metrics] no data on the loss — skip.")
+        return
+
+    epochs = np.arange(1, len(avg_epoch_losses) + 1)
+
+    dice_arr = None
+    if avg_epoch_dices:
+        dice_arr = np.full_like(avg_epoch_losses, np.nan, dtype=float)
+        dice_arr[:len(avg_epoch_dices)] = avg_epoch_dices
+
+    fig, ax1 = plt.subplots(figsize=(9,5))
+
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
+    ax1.plot(epochs, avg_epoch_losses, marker='o', label='Train Loss')
+    ax1.grid(True, linestyle=':', alpha=0.7)
+
+    if dice_arr is not None:
+        ax2 = ax1.twinx()
+        ax2.set_ylabel('Dice')
+        ax2.plot(epochs, dice_arr, marker='x', label='Val Dice')
+
+    plt.title("Training Loss & Validation Dice per Epoch")
+    fig.tight_layout()
+
+    out_path = os.path.join(out_dir, "metrics_epoch.png")
+    plt.savefig(out_path, bbox_inches='tight', dpi=150)
+    plt.close(fig)
+
+    print(f"[metrics] Saved plot: {out_path}")
 
 def seed_everything(seed=42):
     random.seed(seed)
@@ -86,6 +124,8 @@ def train(args):
     global_step = 0
     accumulation_steps = args.accumulation_steps
     start_epoch = 1
+    avg_epoch_losses = []
+    avg_epoch_dices = []
 
     if args.resume and os.path.isfile(args.resume):
         print(f"[resume] Loading checkpoint: {args.resume}")
@@ -99,6 +139,7 @@ def train(args):
 
     try:
         for epoch in range(start_epoch, args.epochs + 1):
+            epoch_losses = []
             model.train()
             running_loss = 0.0
             pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch}/{args.epochs}")
@@ -123,12 +164,16 @@ def train(args):
                     optimizer.zero_grad()
                     global_step += 1
 
-                running_loss += loss.item() * accumulation_steps
+                true_loss = loss.item() * accumulation_steps
+                running_loss += true_loss
+                epoch_losses.append(true_loss)
                 pbar.set_postfix({
                     "loss": f"{running_loss / (step + 1):.4f}",
                     "lr": optimizer.param_groups[0]['lr']
                 })
-
+            
+            avg_epoch_loss = sum(epoch_losses) / len(epoch_losses)
+            avg_epoch_losses.append(avg_epoch_loss)     
             scheduler.step()
 
             # validation
@@ -165,6 +210,7 @@ def train(args):
                             mean_dice = float(np.mean(dices))
 
                 print(f"Epoch {epoch} validation mean Dice: {mean_dice:.4f}")
+                avg_epoch_dices.append(mean_dice)
 
                 if mean_dice > best_val_dice:
                     best_val_dice = mean_dice
@@ -183,11 +229,10 @@ def train(args):
     except KeyboardInterrupt:
         print("\n[interrupted] Training interrupted. Saving current checkpoint...")
         save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag="interrupted")
+        save_metrics(avg_epoch_losses, avg_epoch_dices, out_dir=args.output_dir_metrics)
         print("Checkpoint saved. Exiting safely.")
+        print("Training finished. Best val dice:", best_val_dice)
         sys.exit(0)
-
-    print("Training finished. Best val dice:", best_val_dice)
-
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -211,6 +256,7 @@ def parse_args():
     p.add_argument("--sw_stride", type=float, default=0.5)
     p.add_argument("--sw_batch", type=int, default=4)
     p.add_argument("--resume", type=str, default=None)
+    p.add_argument("--output_dir_metrics", type=str, default="./ml/metrics")
     return p.parse_args()
 
 
