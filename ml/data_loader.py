@@ -5,6 +5,7 @@ from scipy.ndimage import rotate, gaussian_filter, map_coordinates
 
 
 def augment_ct3d(img, mask):
+    # 1. Geometry
     # spatial flips
     if random.random() < 0.5:
         img = np.flip(img, axis=0).copy(); mask = np.flip(mask, axis=0).copy()
@@ -20,6 +21,7 @@ def augment_ct3d(img, mask):
         img = rotate(img, angle, axes=axes, reshape=False, order=1, mode='nearest')
         mask = rotate(mask, angle, axes=axes, reshape=False, order=0, mode='nearest')
 
+    # 2. Intensity shift/scale
     # random intensity shift/scale 
     if random.random() < 0.5:
         scale = random.uniform(0.9, 1.1)
@@ -33,12 +35,12 @@ def augment_ct3d(img, mask):
         img = img ** gamma
         img = img * (img_max - img_min) + img_min
 
-    # Gaussian noise 
+    # 3. Gaussian noise 
     if random.random() < 0.5:
         noise = np.random.normal(0, 0.02, size=img.shape)
         img = img + noise
 
-    # Elastic deformation (small)
+    # 4. Elastic deformation (small)
     if random.random() < 0.15:
         alpha = random.uniform(20, 40)
         sigma = random.uniform(3, 6)
