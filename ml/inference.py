@@ -2,7 +2,6 @@ import os
 import torch
 import numpy as np
 import nibabel as nib
-import pydicom
 import argparse
 from data_preprocessing import resample_to_spacing, intensity_clip_normalize
 from scipy.ndimage import zoom
@@ -10,6 +9,7 @@ from model import UNet3D
 from pydicom.filereader import dcmread
 from torch.amp import autocast
 from glob import glob
+import time
 
 
 def load_nifti_with_meta(path):
@@ -19,218 +19,167 @@ def load_nifti_with_meta(path):
     affine = nii.affine
     return vol, tuple(spacing), affine
 
-def load_dicom_series(folder):
-    """
-    Read DICOM series from folder and return (volume, spacing, affine)
-    Tries to build a reasonable affine; if unsuccessful, affine will be identity.
-    """
-    files = sorted(glob(os.path.join(folder, "*")))
-    dcm_files = [f for f in files if f.lower().endswith(".dcm") or True]  # include all - pydicom will try to read
-    if len(dcm_files) == 0:
+def load_dicom_fast(folder):
+    files = sorted(glob(os.path.join(folder, "*.dcm")))
+    if not files:
+        files = sorted(glob(os.path.join(folder, "*")))
+        files = [f for f in files if os.path.isfile(f)]
+    
+    if len(files) == 0:
         raise ValueError("No files found in DICOM folder")
 
-    # read all dicom slices that can be read
     slices = []
-    for f in dcm_files:
+    pixel_arrays = []
+    
+    for f in files:  
         try:
             ds = dcmread(f, force=True)
-            if hasattr(ds, "ImagePositionPatient") and hasattr(ds, "ImageOrientationPatient"):
-                slices.append(ds)
-            else:
-                # still append; will try best-effort
-                slices.append(ds)
+            pixel_arrays.append(ds.pixel_array.astype(np.float32))
+            slices.append(ds)
         except Exception as e:
-            # ignore unreadable files
             continue
 
-    if len(slices) == 0:
+    if len(pixel_arrays) == 0:
         raise ValueError("No readable DICOM slices found")
 
-    # sort by ImagePositionPatient (z)
-    def _pos(ds):
-        ipp = getattr(ds, "ImagePositionPatient", None)
-        if ipp is not None:
-            return float(ipp[2])
-        # fallback to InstanceNumber or slice file order
-        if hasattr(ds, "InstanceNumber"):
-            return float(ds.InstanceNumber)
-        return 0.0
-
-    slices = sorted(slices, key=_pos)
-
-    # stack pixel arrays
     try:
-        vol = np.stack([s.pixel_array for s in slices]).astype(np.float32)
-    except Exception as e:
-        # if shapes mismatch, try converting to a common shape
-        arrs = [np.asarray(s.pixel_array, dtype=np.float32) for s in slices]
-        max_shape = np.max([a.shape for a in arrs], axis=0)
-        padded = []
-        for a in arrs:
-            pad = [(0, max_shape[0] - a.shape[0]), (0, max_shape[1] - a.shape[1])]
-            a_p = np.pad(a, pad, mode="constant", constant_values=0)
-            padded.append(a_p)
-        vol = np.stack(padded).astype(np.float32)
+        sorted_data = sorted(zip(slices, pixel_arrays), 
+                           key=lambda x: getattr(x[0], 'InstanceNumber', 0))
+        slices, pixel_arrays = zip(*sorted_data)
+    except:
+        pass
 
-    # spacing: try to get PixelSpacing and SliceThickness/spacing between slices
+    vol = np.stack(pixel_arrays)
+
     ds0 = slices[0]
-    pixel_spacing = None
-    try:
-        ps = getattr(ds0, "PixelSpacing", None)
-        if ps is not None:
-            pixel_spacing = (float(ps[0]), float(ps[1]))  # typically (row, col)
-    except Exception:
-        pixel_spacing = None
-
-    # slice spacing: compute from z positions if possible
-    slice_spacings = []
-    zs = []
-    for s in slices:
-        ipp = getattr(s, "ImagePositionPatient", None)
-        if ipp is not None:
-            zs.append(float(ipp[2]))
-    if len(zs) >= 2:
-        slice_spacings = np.diff(np.sort(zs))
-        slice_spacing = float(np.median(slice_spacings))
+    pixel_spacing = getattr(ds0, 'PixelSpacing', [1.0, 1.0])
+    slice_thickness = getattr(ds0, 'SliceThickness', 1.0)
+    
+    if len(slices) > 1:
+        try:
+            pos1 = getattr(slices[0], 'ImagePositionPatient', [0, 0, 0])
+            pos2 = getattr(slices[1], 'ImagePositionPatient', [0, 0, 0])
+            slice_spacing = abs(float(pos2[2]) - float(pos1[2]))
+        except:
+            slice_spacing = float(slice_thickness)
     else:
-        slice_spacing = getattr(ds0, "SliceThickness", None)
-        if slice_spacing is None:
-            slice_spacing = 1.0  # fallback
+        slice_spacing = float(slice_thickness)
 
-    # construct spacing in (z, y, x) order
-    if pixel_spacing is not None:
-        spacing = (slice_spacing, float(pixel_spacing[0]), float(pixel_spacing[1]))
-    else:
-        spacing = (slice_spacing, 1.0, 1.0)
-
-    # build a rough affine matrix using ImageOrientationPatient and ImagePositionPatient
-    affine = np.eye(4, dtype=np.float32)
-    try:
-        iop = getattr(ds0, "ImageOrientationPatient", None)
-        ipp = getattr(ds0, "ImagePositionPatient", None)
-        if iop is not None and ipp is not None:
-            # direction cosines
-            row_cosine = np.array(iop[0:3], dtype=float)
-            col_cosine = np.array(iop[3:6], dtype=float)
-            slice_cosine = np.cross(row_cosine, col_cosine)
-            ps = getattr(ds0, "PixelSpacing", [1.0, 1.0])
-            px = float(ps[1]); py = float(ps[0])  # column (x), row (y)
-            affine[:3, 0] = row_cosine * px
-            affine[:3, 1] = col_cosine * py
-            # approximate slice spacing magnitude
-            affine[:3, 2] = slice_cosine * spacing[0]
-            affine[:3, 3] = np.array(ipp, dtype=float)
-    except Exception:
-        affine = np.eye(4, dtype=np.float32)
-
-    return vol, tuple(spacing), affine
+    spacing = (slice_spacing, float(pixel_spacing[0]), float(pixel_spacing[1]))
+    
+    return vol, spacing, np.eye(4)
 
 def get_start_points(max_size, patch_size, stride):
-    """
-    It generates starting indexes so that:
-    - a non-empty list is always returned;
-    - the last window is guaranteed to cover the right/bottom/back edge (if necessary).
-    """
-    # if the size is less than or equal to the patch, start from 0
     if max_size <= patch_size:
         return [0]
 
     starts = []
     i = 0
-    # moving forward until the window fits completely
     while i + patch_size <= max_size:
         starts.append(i)
         i += stride
 
-    # if the last window does not capture the right/bottom edge, add precise alignment
-    if starts:
-        if starts[-1] + patch_size < max_size:
-            starts.append(max_size - patch_size)
-    else:
-        # in case of any strange input data, we return an aligned start
-        starts = [max_size - patch_size]
+    if starts and starts[-1] + patch_size < max_size:
+        starts.append(max_size - patch_size)
 
-    # remove duplicates (in case the start coincides with an already added one)
-    # and return them in sorted order
-    starts = sorted(set(starts))
-    return starts
+    return sorted(set(starts))
 
 
-def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.5, batch_size=1):
+def sliding_window_inference_fast(volume, model, device, patch_size, stride_factor=0.5, batch_size=4):
     model.eval()
-    with torch.no_grad():
+    
+    with torch.inference_mode():
         z_max, y_max, x_max = volume.shape
         dz, dy, dx = patch_size
-        # voxel step (int), min 1
         sz, sy, sx = [max(1, int(d * stride_factor)) for d in patch_size]
 
-        prob_map = np.zeros_like(volume, dtype=np.float32)
-        count_map = np.zeros_like(volume, dtype=np.float32)
+        # Используем torch tensors на CPU для аккумуляции
+        prob_map = torch.zeros((z_max, y_max, x_max), dtype=torch.float32, device='cpu')
+        count_map = torch.zeros((z_max, y_max, x_max), dtype=torch.float32, device='cpu')
 
         z_starts = get_start_points(z_max, dz, sz)
-        y_starts = get_start_points(y_max, dy, sy)
+        y_starts = get_start_points(y_max, dy, sy)  
         x_starts = get_start_points(x_max, dx, sx)
 
-        patches = []
-        coords = []
+        print(f"Processing {len(z_starts)}x{len(y_starts)}x{len(x_starts)} = {len(z_starts)*len(y_starts)*len(x_starts)} patches")
+        print(f"Stride: z={sz}, y={sy}, x={sx}")
 
-        def process_batch(patches, coords):
-            # patches: numpy list [1,1,D,H,W] of the same D,H,W
-            batch_np = np.concatenate(patches, axis=0).astype(np.float32)  # shape [B,1,D,H,W]
-            patches_t = torch.from_numpy(batch_np).to(device, non_blocking=True)
-            with autocast(device_type="cuda", enabled=(device.type == "cuda")):
-                logits = model(patches_t)  # [B, 1, D, H, W]
-                probs = torch.sigmoid(logits).cpu().numpy()[:, 0]  # [B, D, H, W]
+        # Заранее выделяем память для батча на GPU
+        use_fp16 = device.type == 'cuda'
+        batch_tensor = torch.zeros((batch_size, 1, dz, dy, dx), 
+                                 dtype=torch.float16 if use_fp16 else torch.float32,
+                                 device=device)
 
-            for p_idx, (z0, y0, x0) in enumerate(coords):
-                p = probs[p_idx]
-                # we take into account that the edge may have exactly the same dimensions, but just in case, we will truncate
+        coords_list = []
+        batch_count = 0
+        total_patches = 0
+
+        def process_batch(batch_count, coords_list):
+            if batch_count == 0:
+                return
+                
+            with autocast(device_type="cuda", enabled=use_fp16):
+                logits = model(batch_tensor[:batch_count])
+                probs = torch.sigmoid(logits).squeeze(1).float()  # Конвертируем в float32 для точности
+                
+            # Переносим на CPU для аккумуляции
+            probs_cpu = probs.cpu()
+            
+            for i, (z0, y0, x0) in enumerate(coords_list):
+                prob_slice = probs_cpu[i]
                 z1 = min(z0 + dz, z_max)
-                y1 = min(y0 + dy, y_max)
+                y1 = min(y0 + dy, y_max) 
                 x1 = min(x0 + dx, x_max)
-                p = p[: (z1 - z0), : (y1 - y0), : (x1 - x0)]
-                prob_map[z0:z1, y0:y1, x0:x1] += p
+                
+                actual_z = z1 - z0
+                actual_y = y1 - y0
+                actual_x = x1 - x0
+                
+                # Обрезаем prob_slice до фактических размеров
+                prob_slice_cropped = prob_slice[:actual_z, :actual_y, :actual_x]
+                
+                # Аккумулируем результаты
+                prob_map[z0:z1, y0:y1, x0:x1] += prob_slice_cropped
                 count_map[z0:z1, y0:y1, x0:x1] += 1
 
-        # we form patches strictly according to patch_size — get_start_points guarantees this
         for z in z_starts:
             for y in y_starts:
                 for x in x_starts:
-                    # extracting a patch of the required size
-                    z1 = z + dz
-                    y1 = y + dy
-                    x1 = x + dx
-                    patch = volume[z:z1, y:y1, x:x1]
-
-                    # just in case, if the patch is smaller for some reason, pad it to the desired size
-                    # (this protects against unexpected problems with get_start_points)
+                    patch = volume[z:z+dz, y:y+dy, x:x+dx]
+                    
                     if patch.shape != (dz, dy, dx):
                         pad_z = dz - patch.shape[0]
                         pad_y = dy - patch.shape[1]
                         pad_x = dx - patch.shape[2]
-                        patch = np.pad(patch,
-                                       ((0, pad_z), (0, pad_y), (0, pad_x)),
-                                       mode='constant', constant_values=0)
+                        patch = np.pad(patch, 
+                                     ((0, pad_z), (0, pad_y), (0, pad_x)), 
+                                     mode='constant', constant_values=0)
+                    
+                    patch_tensor = torch.from_numpy(patch.astype(np.float32))
+                    if use_fp16:
+                        patch_tensor = patch_tensor.half()
+                    
+                    batch_tensor[batch_count, 0] = patch_tensor
+                    coords_list.append((z, y, x))
+                    batch_count += 1
+                    total_patches += 1
 
-                    patches.append(patch[None, None, ...])  # [1,1,D,H,W]
-                    coords.append((z, y, x))
+                    if batch_count == batch_size:
+                        process_batch(batch_count, coords_list)
+                        batch_count = 0
+                        coords_list = []
 
-                    if len(patches) == batch_size:
-                        process_batch(patches, coords)
-                        patches, coords = [], []
+        process_batch(batch_count, coords_list)
 
-        if len(patches) > 0:
-            process_batch(patches, coords)
-
-        # avoiding division by zero
-        prob_map = prob_map / np.maximum(count_map, 1e-8)
-        return prob_map
+        print(f"Processed {total_patches} patches total")
+        
+        prob_map = prob_map / torch.clamp(count_map, min=1e-8)
+        return prob_map.numpy()
 
 def postprocess_mask_to_orig(mask_pred, orig_spacing, new_spacing, orig_shape):
-    # factors to go new_spacing -> orig_spacing: factor = new/old (since resample_to_spacing used orig/new)
     factors = [n / o for o, n in zip(orig_spacing, new_spacing)]
     mask_rs = zoom(mask_pred.astype(np.uint8), factors, order=0)
-    # crop/pad to exact orig_shape
+    
     if mask_rs.shape != tuple(orig_shape):
         padded = np.zeros(orig_shape, dtype=np.uint8)
         min_z = min(mask_rs.shape[0], orig_shape[0])
@@ -238,27 +187,30 @@ def postprocess_mask_to_orig(mask_pred, orig_spacing, new_spacing, orig_shape):
         min_x = min(mask_rs.shape[2], orig_shape[2])
         padded[:min_z, :min_y, :min_x] = mask_rs[:min_z, :min_y, :min_x]
         mask_rs = padded
+        
     return mask_rs.astype(np.uint8)
-
 
 def save_mask_nifti(mask, affine, out_path):
     nii = nib.Nifti1Image(mask.astype(np.uint8), affine)
     nib.save(nii, out_path)
 
-def load_checkpoint(model, ckpt_path, device):
-    ck = torch.load(ckpt_path, map_location=device)
+def load_checkpoint_fast(model, ckpt_path, device):
+    start = time.time()
+    ck = torch.load(ckpt_path, map_location=device, weights_only=False)
+    print(f"Checkpoint loaded in {time.time() - start:.2f}s")
+    
     if isinstance(ck, dict):
-        if "model_state" in ck:
-            state = ck["model_state"]
-        elif "state_dict" in ck:
-            state = ck["state_dict"]
-        elif "model" in ck:
-            state = ck["model"]
-        else:
-            state = ck
+        state_dict = ck.get("model_state", ck.get("state_dict", ck.get("model", ck)))
     else:
-        state = ck
-    model.load_state_dict(state)
+        state_dict = ck
+    
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        if k.startswith('module.'):  # для DataParallel
+            k = k[7:]
+        new_state_dict[k] = v
+    
+    model.load_state_dict(new_state_dict, strict=False)
     return model
 
 def main():
@@ -268,23 +220,46 @@ def main():
     p.add_argument("--output", required=True, help="Path to save output mask (.nii.gz)")
     p.add_argument("--device", default="cuda", help="cuda or cpu")
     p.add_argument("--new_spacing", nargs=3, type=float, default=[1.5, 1.5, 1.5], help="target spacing used for model (z y x)")
-    p.add_argument("--patch_size", nargs=3, type=int, default=[64, 128, 128], help="patch size (z y x) used for inference")
-    p.add_argument("--stride_factor", type=float, default=0.5, help="stride factor for sliding window")
-    p.add_argument("--batch_size", type=int, default=2, help="batch size for sliding window inference")
+    p.add_argument("--patch_size", nargs=3, type=int, default=[80, 160, 160], help="patch size (z y x) used for inference")
+    p.add_argument("--stride_factor", type=float, default=0.5, help="stride factor for sliding window (увеличено для скорости)")
+    p.add_argument("--batch_size", type=int, default=4, help="batch size for sliding window inference (увеличено для скорости)")
     p.add_argument("--base_filters", type=int, default=16, help="base filters for UNet3D architecture")
     p.add_argument("--clip", nargs=2, type=float, default=[-200, 250], help="HU clip min and max")
+    p.add_argument("--fast_mode", action="store_true", help="Включить агрессивные оптимизации для скорости")
     args = p.parse_args()
 
-    device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
+    total_start = time.time()
+    
+    if args.device == "cuda" and not torch.cuda.is_available():
+        print("CUDA not available, using CPU")
+        device = torch.device("cpu")
+    else:
+        device = torch.device(args.device)
+    
+    print(f"Using device: {device}")
+
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True  # Авто-оптимизация сверток
+        torch.backends.cuda.matmul.allow_tf32 = True  # Быстрая matmul
+        torch.backends.cudnn.allow_tf32 = True
+        print("CUDA optimizations enabled")
 
     new_spacing = tuple(args.new_spacing)
     patch_size = tuple(args.patch_size)
 
-    # 1) Load input
+    # Настройки для быстрого режима
+    if args.fast_mode:
+        args.stride_factor = 0.5  # Еще меньше перекрытие
+        if device.type == 'cuda':
+            args.batch_size = 8   # Больше батч на GPU
+        print("Fast mode enabled")
+
+    # 1) Загрузка входных данных
+    load_start = time.time()
     input_path = args.input
     if os.path.isdir(input_path):
-        print("Loading DICOM series from folder...")
-        vol, orig_spacing, affine = load_dicom_series(input_path)
+        print("Loading DICOM series (fast mode)...")
+        vol, orig_spacing, affine = load_dicom_fast(input_path)
         orig_shape = vol.shape
         is_nifti = False
     else:
@@ -293,36 +268,70 @@ def main():
         orig_shape = vol.shape
         is_nifti = True
 
+    print(f"Original data loaded in {time.time() - load_start:.2f}s")
     print(f"Original shape: {orig_shape}, orig_spacing: {orig_spacing}")
 
-    # 2) Preprocess (resample -> clip -> normalize)
-    print("Resampling to model spacing:", new_spacing)
+    # 2) Препроцессинг
+    preprocess_start = time.time()
+    print(f"Resampling to model spacing: {new_spacing}")
     vol_rs = resample_to_spacing(vol, orig_spacing, new_spacing, order=1)
     vol_rs = intensity_clip_normalize(vol_rs, clip_min=float(args.clip[0]), clip_max=float(args.clip[1]))
+    print(f"Preprocessing completed in {time.time() - preprocess_start:.2f}s")
+    print(f"Resampled shape: {vol_rs.shape}")
 
-    # 3) build and load model
-    print("Building model and loading checkpoint...")
+    # 3) Загрузка модели
+    model_start = time.time()
+    print("Building model and loading checkpoint (fast)...")
     model = UNet3D(in_ch=1, out_ch=1, base_filters=args.base_filters)
-    model = load_checkpoint(model, args.model, device)
+    model = load_checkpoint_fast(model, args.model, device)
     model.to(device)
+    
+    # Используем half precision для GPU
+    if device.type == 'cuda':
+        model = model.half()
+        print("Using FP16 precision")
+    
     model.eval()
+    print(f"Model loaded in {time.time() - model_start:.2f}s")
 
-    # 4) Inference
-    print("Running sliding-window inference...")
-    prob = sliding_window_inference(vol_rs, model, device, patch_size=patch_size, stride_factor=args.stride_factor, batch_size=args.batch_size)
+    # 4) Инференс
+    inference_start = time.time()
+    print("Running optimized sliding-window inference...")
+    print(f"Batch size: {args.batch_size}, Stride factor: {args.stride_factor}")
+    
+    prob = sliding_window_inference_fast(
+        vol_rs, model, device, 
+        patch_size=patch_size, 
+        stride_factor=args.stride_factor, 
+        batch_size=args.batch_size
+    )
+    
+    inference_time = time.time() - inference_start
+    print(f"Inference completed in {inference_time:.2f}s")
 
-    # 5) Threshold to binary mask
+    # 5) Постпроцессинг
+    postprocess_start = time.time()
     mask_new_spacing = (prob >= 0.5).astype(np.uint8)
 
-    # 6) Postprocess: resample mask back to original spacing/shape
     print("Postprocessing mask back to original space...")
     mask_orig = postprocess_mask_to_orig(mask_new_spacing, orig_spacing, new_spacing, orig_shape)
+    print(f"Postprocessing completed in {time.time() - postprocess_start:.2f}s")
 
-    # 7) Save result as NIfTI using original affine if available
+    # 6) Сохранение результата
+    save_start = time.time()
     out_path = args.output
     print(f"Saving mask to {out_path} ...")
     save_mask_nifti(mask_orig, affine, out_path)
-    print("Done.")
+    print(f"Mask saved in {time.time() - save_start:.2f}s")
+
+    total_time = time.time() - total_start
+    print(f"\n=== TOTAL PROCESSING TIME: {total_time:.2f}s ===")
+    print(f"Breakdown:")
+    print(f"  - Data loading: {load_start - total_start:.2f}s")
+    print(f"  - Preprocessing: {preprocess_start - load_start:.2f}s") 
+    print(f"  - Model loading: {model_start - preprocess_start:.2f}s")
+    print(f"  - Inference: {inference_time:.2f}s")
+    print(f"  - Postprocessing: {time.time() - inference_start - inference_time:.2f}s")
 
 if __name__ == "__main__":
     main()
