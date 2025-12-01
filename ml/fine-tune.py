@@ -12,17 +12,19 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import csv
 
+import nibabel as nib
+
 import torch
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
 
-# user modules (must be importable)
 from data_loader import LiverPatchDataset, augment_ct3d
 from model import UNet3D, DiceBCELoss
 from inference import sliding_window_inference
 
+
 class EarlyStopping:
-    def __init__(self, patience=5, min_delta=1e-4):
+    def __init__(self, patience=5, min_delta=3e-3):
         self.patience = patience
         self.min_delta = min_delta
         self.counter = 0
@@ -58,7 +60,7 @@ def dice_from_counts(inter, p_sum, g_sum):
     return 2.0 * inter / (p_sum + g_sum + EPS)
 
 def iou_from_counts(inter, p_sum, g_sum):
-    return inter / (p_sum + p_sum - inter + EPS) if False else inter / (p_sum + g_sum - inter + EPS)
+    return inter / (p_sum + g_sum - inter + EPS)
 
 def precision_from_counts(inter, p_sum):
     return inter / (p_sum + EPS)
@@ -95,6 +97,41 @@ def compute_surface_distances(pred_mask, gt_mask):
     assd_val = (d_pred_to_gt.mean() + d_gt_to_pred.mean()) / 2.0
     return float(hd95_val), float(assd_val)
 
+def prepare_volume_list(data_dir):
+    npy_images = sorted(glob(os.path.join(data_dir, "imagesTr_npy", "*.npy")))
+    npy_masks = sorted(glob(os.path.join(data_dir, "labelsTr_npy", "*.npy")))
+    if len(npy_images) > 0 and len(npy_images) == len(npy_masks):
+        return npy_images, npy_masks
+
+    img_patterns = [os.path.join(data_dir, "imagesTr", "*.nii"), os.path.join(data_dir, "imagesTr", "*.nii.gz")]
+    msk_patterns = [os.path.join(data_dir, "labelsTr", "*.nii"), os.path.join(data_dir, "labelsTr", "*.nii.gz")]
+    images = []
+    masks = []
+    for p in img_patterns:
+        images.extend(sorted(glob(p)))
+    for p in msk_patterns:
+        masks.extend(sorted(glob(p)))
+    if len(images) == 0:
+        raise AssertionError(f"No images found in {os.path.join(data_dir, 'imagesTr_npy')} or {os.path.join(data_dir,'imagesTr')}")
+    if len(images) != len(masks):
+        raise AssertionError("Images / masks count mismatch")
+    return images, masks
+
+def load_volume(path):
+    # returns numpy float32 array (dense), and optionally the nib header+affine if .nii for saving later
+    if path.endswith(".npy"):
+        arr = np.load(path).astype(np.float32)
+        return arr, None
+    else:
+        nii = nib.load(path)
+        arr = nii.get_fdata(dtype=np.float32)
+        return arr, (nii.affine, nii.header)
+
+def save_nifti(array, affine_header_tuple, out_path):
+    affine, header = affine_header_tuple
+    nii = nib.Nifti1Image(array.astype(np.float32), affine, header)
+    nib.save(nii, out_path)
+
 # metrics plotting & saving
 def save_metrics_plots(all_epoch_stats, out_dir):
     os.makedirs(out_dir, exist_ok=True)
@@ -128,7 +165,7 @@ def save_metrics_plots(all_epoch_stats, out_dir):
         fig, ax = plt.subplots(figsize=(12,6))
         data = [s.get(metric_key, []) for s in all_epoch_stats]
         data = [np.array(d, dtype=float) if len(d)>0 else np.array([np.nan]) for d in data]
-        ax.boxplot(data, labels=[f"E{e}" for e in epochs], showfliers=False)
+        ax.boxplot(data, tick_labels=[f"E{e}" for e in epochs], showfliers=False)
         ax.set_title(f'{label} distribution per epoch (boxplot)')
         ax.set_xlabel('Epoch'); ax.set_ylabel(label)
         plt.xticks(rotation=45)
@@ -176,8 +213,7 @@ def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag
     }, ckpt_path)
     print(f"[checkpoint] Saved: {ckpt_path}")
 
-# dataset helpers 
-def prepare_volume_list(data_dir):
+def prepare_volume_list_deprecated(data_dir):
     images = sorted(glob(os.path.join(data_dir, "imagesTr_npy", "*.npy")))
     masks = sorted(glob(os.path.join(data_dir, "labelsTr_npy", "*.npy")))
     assert len(images) > 0, f"No .npy found in {os.path.join(data_dir, 'imagesTr_npy')}"
@@ -191,7 +227,6 @@ def load_weights_only(model, path, device):
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Pretrained file not found: {path}")
     ckpt = torch.load(path, map_location=device)
-    # support dictionary checkpoint saved by the training script
     if isinstance(ckpt, dict) and "model_state" in ckpt:
         state = ckpt["model_state"]
     elif isinstance(ckpt, dict) and "state_dict" in ckpt:
@@ -233,9 +268,7 @@ def load_checkpoint_resume(model, optimizer, scheduler, path, device):
     best_val = ckpt.get("best_val_dice", -1.0)
     return {"start_epoch": start_epoch, "best_val": best_val}
 
-# freezing helper 
 def freeze_encoder(model):
-    # freeze inc and down* blocks
     for name, module in [("inc", getattr(model, "inc", None)),
                          ("down1", getattr(model, "down1", None)),
                          ("down2", getattr(model, "down2", None)),
@@ -257,17 +290,99 @@ def unfreeze_encoder(model):
         for p in module.parameters():
             p.requires_grad = True
 
-# core fine-tune per-fold 
+def evaluate_case_list(model, device, image_paths, mask_paths, args, out_dir_metrics, prefix="val", save_pred_nii=False):
+    stats = {
+        'dices': [], 'ious': [], 'precisions': [], 'recalls': [], 'f1s': [], 'hd95s': [], 'assds': [],
+        'cases': 0, 'skipped_empty_gt': 0, 'fp_on_empty_gt': 0,
+        'per_case': []
+    }
+    model.eval()
+    with torch.no_grad():
+        for img_path, msk_path in zip(image_paths, mask_paths):
+            arr, _ = load_volume(img_path)
+            msk_arr, hdr = load_volume(msk_path)
+            gt = (msk_arr > 0).astype(np.uint8)
+
+            prob_map = sliding_window_inference(
+                arr, model, device,
+                patch_size=tuple(args.patch_size),
+                stride_factor=args.sw_stride,
+                batch_size=args.sw_batch
+            )
+            pred = (prob_map >= args.threshold).astype(np.uint8)
+
+            if gt.sum() == 0:
+                if pred.sum() > 0:
+                    stats['fp_on_empty_gt'] += 1
+                stats['skipped_empty_gt'] += 1
+                case_row = {'case': os.path.basename(img_path), 'dice': None, 'iou': None, 'precision': None, 'recall': None, 'f1': None, 'hd95': None, 'assd': None, 'notes': 'empty_gt'}
+                stats['per_case'].append(case_row)
+                continue
+
+            inter = int(np.logical_and(pred, gt).sum())
+            p_sum = int(pred.sum())
+            g_sum = int(gt.sum())
+
+            dice_val = dice_from_counts(inter, p_sum, g_sum)
+            iou_val = iou_from_counts(inter, p_sum, g_sum)
+            prec = precision_from_counts(inter, p_sum)
+            rec = recall_from_counts(inter, g_sum)
+            f1 = f1_from_pr(prec, rec)
+            hd95_val, assd_val = compute_surface_distances(pred, gt)
+
+            stats['dices'].append(float(dice_val))
+            stats['ious'].append(float(iou_val))
+            stats['precisions'].append(float(prec))
+            stats['recalls'].append(float(rec))
+            stats['f1s'].append(float(f1))
+            stats['hd95s'].append(float(hd95_val) if not np.isnan(hd95_val) else np.nan)
+            stats['assds'].append(float(assd_val) if not np.isnan(assd_val) else np.nan)
+            stats['cases'] += 1
+
+            case_row = {'case': os.path.basename(img_path), 'dice': float(dice_val), 'iou': float(iou_val),
+                        'precision': float(prec), 'recall': float(rec), 'f1': float(f1),
+                        'hd95': float(hd95_val) if not np.isnan(hd95_val) else None,
+                        'assd': float(assd_val) if not np.isnan(assd_val) else None, 'notes': ''}
+            stats['per_case'].append(case_row)
+
+            if save_pred_nii and hdr is not None:
+                # save predicted mask as nifti alongside metrics
+                pred_save_dir = os.path.join(out_dir_metrics, "preds")
+                os.makedirs(pred_save_dir, exist_ok=True)
+                save_nifti(pred.astype(np.uint8), hdr, os.path.join(pred_save_dir, f"{os.path.basename(img_path).split('.')[0]}_pred.nii.gz"))
+
+    # aggregate
+    if len(stats['dices']) == 0:
+        stats['mean_dice'] = 0.0
+    else:
+        stats['mean_dice'] = float(np.mean(stats['dices']))
+    return stats
+
+# core fine-tune per-fold (updated to produce test split and run test eval)
 def fine_tune_one_fold(fold_id, train_idx, val_idx, image_paths, mask_paths, args):
     out_fold = os.path.join(args.output_dir, f"fold_{fold_id}")
     metrics_out = os.path.join(args.output_dir_metrics, f"fold_{fold_id}")
     os.makedirs(out_fold, exist_ok=True)
     os.makedirs(metrics_out, exist_ok=True)
 
-    train_images = [image_paths[i] for i in train_idx]
-    train_masks = [mask_paths[i] for i in train_idx]
+    all_indices = np.arange(len(image_paths))
+    remaining = np.setdiff1d(all_indices, val_idx)
+    rng = np.random.RandomState(args.fold_seed + fold_id)
+    if len(remaining) < 2:
+        raise ValueError("Not enough volumes to pick 2 test cases from remaining after val split.")
+    test_idx = rng.choice(remaining, size=2, replace=False)
+    # Now final train indices are remaining - test_idx
+    train_idx_final = np.setdiff1d(remaining, test_idx)
+    assert len(train_idx_final) == len(all_indices) - len(val_idx) - len(test_idx)
+
+    train_images = [image_paths[i] for i in train_idx_final]
+    train_masks = [mask_paths[i] for i in train_idx_final]
     val_images = [image_paths[i] for i in val_idx]
     val_masks = [mask_paths[i] for i in val_idx]
+    test_images = [image_paths[i] for i in test_idx]
+    test_masks = [mask_paths[i] for i in test_idx]
+
+    print(f"[fold {fold_id}] Sizes -> train: {len(train_images)} val: {len(val_images)} test: {len(test_images)}")
 
     bs = args.batch_size
     accum_steps = args.accumulation_steps
@@ -289,13 +404,11 @@ def fine_tune_one_fold(fold_id, train_idx, val_idx, image_paths, mask_paths, arg
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = UNet3D(in_ch=1, out_ch=1, base_filters=args.base_filters).to(device)
 
-    # Option A: resume full checkpoint (weights+opt) if requested
     start_epoch = 1
     best_val_dice = -1.0
     scheduler = None
     optimizer = None
 
-    # If user requested resume, create optimizer & scheduler first so we can load states
     if args.resume is not None:
         # create optimizer with default ft_lr for resume case (will be overwritten by loaded state if present)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.ft_lr, weight_decay=args.weight_decay)
@@ -306,10 +419,8 @@ def fine_tune_one_fold(fold_id, train_idx, val_idx, image_paths, mask_paths, arg
             best_val_dice = resume_info.get("best_val", -1.0)
             print(f"[fold {fold_id}] Resuming from epoch {start_epoch} (best dice {best_val_dice})")
     else:
-        # Load weights only (recommended fine-tuning behavior)
         if args.pretrained is not None:
             load_weights_only(model, args.pretrained, device)
-        # freeze encoder if requested BEFORE building optimizer
         if args.freeze_encoder:
             freeze_encoder(model)
             print(f"[fold {fold_id}] Encoder frozen (trainable params will be decoder/out only).")
@@ -366,7 +477,7 @@ def fine_tune_one_fold(fold_id, train_idx, val_idx, image_paths, mask_paths, arg
             if scheduler is not None:
                 scheduler.step()
 
-            # VALIDATION: full-volume sliding-window inference
+            # validation: full-volume sliding-window inference
             val_stats = {
                 'epoch': epoch,
                 'losses': epoch_losses,
@@ -377,12 +488,12 @@ def fine_tune_one_fold(fold_id, train_idx, val_idx, image_paths, mask_paths, arg
             model.eval()
             with torch.no_grad():
                 for vi, (img_path, msk_path) in enumerate(zip(val_images, val_masks)):
-                    img = np.load(img_path).astype(np.float32)
-                    msk = np.load(msk_path).astype(np.float32)
-                    gt = (msk > 0).astype(np.uint8)
+                    arr, _ = load_volume(img_path)
+                    msk_arr, _ = load_volume(msk_path)
+                    gt = (msk_arr > 0).astype(np.uint8)
 
                     prob_map = sliding_window_inference(
-                        img, model, device,
+                        arr, model, device,
                         patch_size=tuple(args.patch_size),
                         stride_factor=args.sw_stride,
                         batch_size=args.sw_batch
@@ -457,9 +568,38 @@ def fine_tune_one_fold(fold_id, train_idx, val_idx, image_paths, mask_paths, arg
         raise
 
     save_metrics_plots(all_epoch_stats, metrics_out)
-    return {"fold": fold_id, "best_val_dice": best_val_dice, "model_path": os.path.join(out_fold, f"best_fold{fold_id}.pth"), "metrics_dir": metrics_out}
 
-# main CV loop 
+    # test
+    best_model_path = os.path.join(out_fold, f"best_fold{fold_id}.pth")
+    if os.path.isfile(best_model_path):
+        ck = torch.load(best_model_path, map_location=device)
+        if "model_state" in ck:
+            model.load_state_dict(ck["model_state"])
+        else:
+            model.load_state_dict(ck)
+        print(f"[fold {fold_id}] Loaded best model for test evaluation: {best_model_path}")
+    else:
+        print(f"[fold {fold_id}] Warning: best model not found at {best_model_path}. Using last model weights for test eval.")
+
+    test_stats = evaluate_case_list(model, device, test_images, test_masks, args, metrics_out, prefix="test", save_pred_nii=True)
+
+    # save test metrics
+    with open(os.path.join(metrics_out, "test_metrics.json"), "w") as f:
+        json.dump(test_stats, f, indent=2)
+    # csv
+    csv_path = os.path.join(metrics_out, "test_metrics.csv")
+    with open(csv_path, "w", newline="") as f:
+        fieldnames = ['case', 'dice', 'iou', 'precision', 'recall', 'f1', 'hd95', 'assd', 'notes']
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for c in test_stats['per_case']:
+            writer.writerow(c)
+
+    print(f"[fold {fold_id}] Test mean Dice: {test_stats['mean_dice']:.4f} (cases: {test_stats['cases']}, skipped_empty: {test_stats['skipped_empty_gt']})")
+
+    return {"fold": fold_id, "best_val_dice": best_val_dice, "model_path": os.path.join(out_fold, f"best_fold{fold_id}.pth"), "metrics_dir": metrics_out, "test_mean_dice": test_stats['mean_dice']}
+
+# main loop 
 def fine_tune_cv_main(args):
     seed_everything(args.seed)
     image_paths, mask_paths = prepare_volume_list(args.data_dir)
@@ -471,8 +611,9 @@ def fine_tune_cv_main(args):
     kf = KFold(n_splits=k, shuffle=True, random_state=args.fold_seed)
 
     results = []
-    for fold_id, (train_idx, val_idx) in enumerate(kf.split(indices), start=1):
-        print(f"\n=== Fold {fold_id}/{k}: train {len(train_idx)} vols, val {len(val_idx)} vols ===")
+    for fold_id, (train_idx_unused, val_idx) in enumerate(kf.split(indices), start=1):
+        train_idx, val_idx = train_idx_unused, val_idx 
+        print(f"\n=== Fold {fold_id}/{k}: train-candidates {len(train_idx)} vols, val {len(val_idx)} vols ===")
         r = fine_tune_one_fold(fold_id, train_idx, val_idx, image_paths, mask_paths, args)
         results.append(r)
 
@@ -480,19 +621,22 @@ def fine_tune_cv_main(args):
     with open(summary_path, 'w') as f:
         json.dump(results, f, indent=2)
     dices = [r['best_val_dice'] for r in results]
+    test_dices = [r.get('test_mean_dice', 0.0) for r in results]
     print(f"\nPer-fold best Dice: {dices}")
     print(f"Mean best Dice: {float(np.mean(dices)):.4f}, Std: {float(np.std(dices)):.4f}")
+    print(f"Per-fold test Dice: {test_dices}")
+    print(f"Mean test Dice: {float(np.mean(test_dices)):.4f}, Std: {float(np.std(test_dices)):.4f}")
     print(f"Summary saved to {summary_path}")
 
 def build_parser():
     p = argparse.ArgumentParser()
-    p.add_argument("--data_dir", type=str, required=True, help="Root dataset dir with imagesTr_npy and labelsTr_npy")
+    p.add_argument("--data_dir", type=str, required=True, help="Root dataset dir with imagesTr_npy and labelsTr_npy or imagesTr/labelsTr (nii)")
     p.add_argument("--pretrained", type=str, default=None, help="Path to pretrained weights (weights-only). If provided, loads weights but creates new optimizer.")
     p.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume (loads model+optimizer+scheduler and continues).")
-    p.add_argument("--output_dir", type=str, default="ml/ft_results", help="Where to save fold outputs")
-    p.add_argument("--output_dir_metrics", type=str, default="ml/ft_metrics", help="Where to save metrics/plots")
+    p.add_argument("--output_dir", type=str, default="ml/results_ft/run3/ft_results", help="Where to save fold outputs")
+    p.add_argument("--output_dir_metrics", type=str, default="ml/results_ft/run3/ft_metrics", help="Where to save metrics/plots")
     p.add_argument("--k_folds", type=int, default=4)
-    p.add_argument("--fold_seed", type=int, default=42)
+    p.add_argument("--fold_seed", type=int, default=404)
     p.add_argument("--ft_epochs", type=int, default=30)
     p.add_argument("--ft_lr", type=float, default=1e-4, help="LR for fine-tuning (used to create new optimizer unless --resume)")
     p.add_argument("--batch_size", type=int, default=4)
