@@ -11,7 +11,5 @@ This project uses the **Medical Segmentation Decathlon (MSD)** dataset for liver
 - **Modality:** CT (Computed Tomography)
 
 ### Authors
-
-### Authors
 **MSD Consortium:**  
 The Medical Segmentation Decathlon was organized by a large international team of researchers and clinicians. For the complete list of authors and contributors, please refer to the [original publication](https://www.nature.com/articles/s41467-022-30695-9#author-information) and the [Medical Segmentation Decathlon website](http://medicaldecathlon.com/).
