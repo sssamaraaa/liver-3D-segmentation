@@ -24,22 +24,19 @@ from scipy.ndimage import binary_erosion
 from scipy.spatial import cKDTree
 from scipy import ndimage as ndi
 
-# Utility / metrics
+# utils
 
-EPS = 1e-6  # стабильность для всех дробей
+EPS = 1e-6  
 
 def seed_everything(seed=42):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # Optional deterministic behaviour (can slow down)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# === ADDED: worker init fn to make DataLoader workers deterministic ===
 def worker_init_fn(worker_id):
-    # each worker gets different seed derived from base seed
     seed = torch.initial_seed() % (2**32 - 1)
     np.random.seed(seed + worker_id)
     random.seed(seed + worker_id)
@@ -61,56 +58,33 @@ def recall_from_counts(inter, g_sum):
 def f1_from_pr(prec, rec):
     return 2 * prec * rec / (prec + rec + EPS)
 
-# === ADDED: surface distance helpers (HD95, ASSD) ===
 def mask_to_surface_coords(mask):
-    """
-    Возвращает координаты surface-voxels маски (где маска отличается от её эрозии).
-    Если маска пустая или занимает весь объём — возвращает пустой массив.
-    """
     if mask.sum() == 0:
         return np.zeros((0, 3), dtype=np.float32)
-    # полагаемся на 3D маску
     struct = np.ones((3,3,3), dtype=bool)
     eroded = binary_erosion(mask, structure=struct, iterations=1)
     surface = mask.astype(bool) & (~eroded)
-    coords = np.array(np.nonzero(surface)).T  # shape (N,3) (z,y,x)
+    coords = np.array(np.nonzero(surface)).T  
     return coords.astype(np.float32)
 
 def compute_surface_distances(pred_mask, gt_mask):
-    """
-    Возвращает (hd95, assd). Если какой-то surface пуст — возвращает (np.nan, np.nan).
-    pred_mask, gt_mask — бинарные numpy массивы (0/1).
-    """
     s_pred = mask_to_surface_coords(pred_mask)
     s_gt = mask_to_surface_coords(gt_mask)
     if s_pred.shape[0] == 0 or s_gt.shape[0] == 0:
         return np.nan, np.nan
 
-    # KD-tree distances
     tree_pred = cKDTree(s_pred)
     tree_gt = cKDTree(s_gt)
 
-    # расстояния от каждой точки поверхности pred до GT
     d_pred_to_gt, _ = tree_gt.query(s_pred, k=1)
-    # и в обратную сторону
     d_gt_to_pred, _ = tree_pred.query(s_gt, k=1)
 
-    # HD95 = 95-й процентиль распределения объединённых минимальных расстояний (симметрично)
     hd95_val = max(np.percentile(d_pred_to_gt, 95), np.percentile(d_gt_to_pred, 95))
-    # ASSD = среднее симметрическое
     assd_val = (d_pred_to_gt.mean() + d_gt_to_pred.mean()) / 2.0
 
     return float(hd95_val), float(assd_val)
 
-# ---------- Visualization / saving ----------
-
 def save_metrics_plots(all_epoch_stats, out_dir):
-    """
-    all_epoch_stats: list of dict, где каждый dict содержит:
-      'epoch', 'losses' (list of train losses per batch),
-      'dices' (list per-val-case), 'ious', 'precisions', 'recalls', 'f1s', 'hd95s', 'assds'
-    Сохраняет png с кривыми и boxplots и csv/json.
-    """
     os.makedirs(out_dir, exist_ok=True)
 
     metrics = ['dice', 'iou', 'precision', 'recall', 'f1', 'hd95', 'assd', 'train_loss']
@@ -122,7 +96,6 @@ def save_metrics_plots(all_epoch_stats, out_dir):
         for m, key in [('dice','dices'), ('iou','ious'), ('precision','precisions'),
                        ('recall','recalls'), ('f1','f1s'), ('hd95','hd95s'), ('assd','assds')]:
             arr = np.array(s.get(key, []), dtype=float)
-            # ignore nan (hd95/assd may contain nan)
             if arr.size == 0:
                 mean_history[m].append(np.nan)
             else:
@@ -141,11 +114,9 @@ def save_metrics_plots(all_epoch_stats, out_dir):
     plt.close()
 
     # boxplots per epoch for key metrics
-    # We'll make one figure containing boxplots for Dice, IoU, F1 across epochs for visualization
     for metric_key, label in [('dices','Dice'), ('ious','IoU'), ('f1s','F1')]:
         fig, ax = plt.subplots(figsize=(12,6))
         data = [s.get(metric_key, []) for s in all_epoch_stats]
-        # convert empty lists to [nan] so boxplot doesn't crash and will show gaps
         data = [np.array(d, dtype=float) if len(d)>0 else np.array([np.nan]) for d in data]
         ax.boxplot(data, labels=[f"E{e}" for e in epochs], showfliers=False)
         ax.set_title(f'{label} distribution per epoch (boxplot)')
@@ -155,7 +126,7 @@ def save_metrics_plots(all_epoch_stats, out_dir):
         plt.savefig(os.path.join(out_dir, f'{metric_key}_boxplot.png'), dpi=150)
         plt.close()
 
-    # Save JSON and CSV summary (means + counts)
+    # json / csv summary
     summary = []
     for s in all_epoch_stats:
         row = {
@@ -188,7 +159,6 @@ def save_metrics_plots(all_epoch_stats, out_dir):
 
     print(f"[metrics] Saved plots and summaries to {out_dir}")
 
-# Checkpoint
 def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag="epoch"):
     ckpt_path = os.path.join(args.output_dir, f"{tag}_{epoch}.pth")
     torch.save({
@@ -201,7 +171,6 @@ def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag
     }, ckpt_path)
     print(f"[checkpoint] Saved: {ckpt_path}")
 
-# Dataset splitting 
 def split_dataset(image_paths, mask_paths, val_frac=0.15):
     indices = np.arange(len(image_paths))
     np.random.shuffle(indices)
@@ -307,7 +276,7 @@ def train(args):
             if scheduler is not None:
                 scheduler.step()
 
-            # === VALIDATION ===
+            # validation
             val_stats = {
                 'epoch': epoch,
                 'losses': epoch_losses,
