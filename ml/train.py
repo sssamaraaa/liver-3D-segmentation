@@ -22,7 +22,6 @@ from inference import sliding_window_inference
 
 from scipy.ndimage import binary_erosion
 from scipy.spatial import cKDTree
-from scipy import ndimage as ndi
 
 # utils
 
@@ -118,7 +117,7 @@ def save_metrics_plots(all_epoch_stats, out_dir):
         fig, ax = plt.subplots(figsize=(12,6))
         data = [s.get(metric_key, []) for s in all_epoch_stats]
         data = [np.array(d, dtype=float) if len(d)>0 else np.array([np.nan]) for d in data]
-        ax.boxplot(data, labels=[f"E{e}" for e in epochs], showfliers=False)
+        ax.boxplot(data, tick_labels=[f"E{e}" for e in epochs], showfliers=False)
         ax.set_title(f'{label} distribution per epoch (boxplot)')
         ax.set_xlabel('Epoch'); ax.set_ylabel(label)
         plt.xticks(rotation=45)
@@ -404,7 +403,7 @@ def parse_args():
     p.add_argument("--resume", type=str, default=None)
     p.add_argument("--output_dir_metrics", type=str, default="ml/metrics")
     p.add_argument("--checkpoint_every", type=int, default=10)
-    p.add_argument("--threshold", type=float, default=0.5)
+    p.add_argument("--threshold", type=float, default=0.45)
     p.add_argument("--grad_clip", type=float, default=1.0)
     p.add_argument("--scheduler", type=str, choices=['cosine','none'], default='cosine')
     return p.parse_args()
