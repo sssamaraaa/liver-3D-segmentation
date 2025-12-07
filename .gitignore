@@ -2,9 +2,9 @@
 
 datasets/
 
-ml/results
-ml/test
-ml/metrics
-ml/__pycache__
-ml/test_on_client
-ml/results_ft
+ml/src/results
+ml/src/test
+ml/src/metrics
+ml/src/__pycache__
+ml/src/test_on_client
+ml/src/results_ft
