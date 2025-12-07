@@ -1,8 +1,7 @@
 .venv/
 
-datasets/
-
 ml/src/results
+ml/src/datasets
 ml/src/test
 ml/src/metrics
 ml/src/__pycache__
