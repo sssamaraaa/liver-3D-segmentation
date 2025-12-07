@@ -6,3 +6,5 @@ ml/results
 ml/test
 ml/metrics
 ml/__pycache__
+ml/test_on_client
+ml/results_ft
