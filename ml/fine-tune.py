@@ -1,26 +1,30 @@
 import os
 import json
 import argparse
-import random
-from glob import glob
-
 import numpy as np
+import matplotlib
+import csv
+import nibabel as nib
+import torch
 from sklearn.model_selection import KFold
 from tqdm import tqdm
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import csv
-
-import nibabel as nib
-
-import torch
+from glob import glob
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
-
 from data_loader import LiverPatchDataset, augment_ct3d
-from model import UNet3D, DiceBCELoss
 from inference import sliding_window_inference
+from model import UNet3D, DiceBCELoss
+from train import (
+    seed_everything,
+    worker_init_fn,
+    dice_from_counts, 
+    iou_from_counts,
+    precision_from_counts,
+    recall_from_counts,
+    f1_from_pr,
+    compute_surface_distances,
+    save_metrics_plots
+)
 
 
 class EarlyStopping:
@@ -41,61 +45,8 @@ class EarlyStopping:
                 self.should_stop = True
 
 # utils 
+matplotlib.use("Agg")
 EPS = 1e-6
-
-def seed_everything(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-def worker_init_fn(worker_id):
-    seed = torch.initial_seed() % (2**32 - 1)
-    np.random.seed(seed + worker_id)
-    random.seed(seed + worker_id)
-
-def dice_from_counts(inter, p_sum, g_sum):
-    return 2.0 * inter / (p_sum + g_sum + EPS)
-
-def iou_from_counts(inter, p_sum, g_sum):
-    return inter / (p_sum + g_sum - inter + EPS)
-
-def precision_from_counts(inter, p_sum):
-    return inter / (p_sum + EPS)
-
-def recall_from_counts(inter, g_sum):
-    return inter / (g_sum + EPS)
-
-def f1_from_pr(prec, rec):
-    return 2 * prec * rec / (prec + rec + EPS)
-
-# surface distances
-from scipy.ndimage import binary_erosion
-from scipy.spatial import cKDTree
-
-def mask_to_surface_coords(mask):
-    if mask.sum() == 0:
-        return np.zeros((0,3), dtype=np.float32)
-    struct = np.ones((3,3,3), dtype=bool)
-    eroded = binary_erosion(mask, structure=struct, iterations=1)
-    surface = mask.astype(bool) & (~eroded)
-    coords = np.array(np.nonzero(surface)).T
-    return coords.astype(np.float32)
-
-def compute_surface_distances(pred_mask, gt_mask):
-    s_pred = mask_to_surface_coords(pred_mask)
-    s_gt = mask_to_surface_coords(gt_mask)
-    if s_pred.shape[0] == 0 or s_gt.shape[0] == 0:
-        return np.nan, np.nan
-    tree_pred = cKDTree(s_pred)
-    tree_gt = cKDTree(s_gt)
-    d_pred_to_gt, _ = tree_gt.query(s_pred, k=1)
-    d_gt_to_pred, _ = tree_pred.query(s_gt, k=1)
-    hd95_val = max(np.percentile(d_pred_to_gt, 95), np.percentile(d_gt_to_pred, 95))
-    assd_val = (d_pred_to_gt.mean() + d_gt_to_pred.mean()) / 2.0
-    return float(hd95_val), float(assd_val)
 
 def prepare_volume_list(data_dir):
     npy_images = sorted(glob(os.path.join(data_dir, "imagesTr_npy", "*.npy")))
@@ -131,75 +82,6 @@ def save_nifti(array, affine_header_tuple, out_path):
     affine, header = affine_header_tuple
     nii = nib.Nifti1Image(array.astype(np.float32), affine, header)
     nib.save(nii, out_path)
-
-# metrics plotting & saving
-def save_metrics_plots(all_epoch_stats, out_dir):
-    os.makedirs(out_dir, exist_ok=True)
-    metrics = ['dice', 'iou', 'precision', 'recall', 'f1', 'hd95', 'assd', 'train_loss']
-    mean_history = {m: [] for m in metrics}
-    epochs = []
-    for s in all_epoch_stats:
-        epochs.append(s['epoch'])
-        mean_history['train_loss'].append(np.mean(s['losses']) if len(s['losses'])>0 else np.nan)
-        for m, key in [('dice','dices'), ('iou','ious'), ('precision','precisions'),
-                       ('recall','recalls'), ('f1','f1s'), ('hd95','hd95s'), ('assd','assds')]:
-            arr = np.array(s.get(key, []), dtype=float)
-            if arr.size == 0:
-                mean_history[m].append(np.nan)
-            else:
-                mean_history[m].append(np.nanmean(arr))
-
-    # line plot
-    plt.figure(figsize=(10,6))
-    plt.plot(epochs, mean_history['train_loss'], marker='o', label='Train loss')
-    if not all(np.isnan(mean_history['dice'])):
-        plt.plot(epochs, mean_history['dice'], marker='x', label='Val mean Dice')
-    plt.xlabel('Epoch'); plt.ylabel('Value'); plt.grid(True, linestyle=':', alpha=0.6)
-    plt.title('Train loss & Val mean Dice per epoch')
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(out_dir, 'metrics_epoch_line.png'), dpi=150)
-    plt.close()
-
-    for metric_key, label in [('dices','Dice'), ('ious','IoU'), ('f1s','F1')]:
-        fig, ax = plt.subplots(figsize=(12,6))
-        data = [s.get(metric_key, []) for s in all_epoch_stats]
-        data = [np.array(d, dtype=float) if len(d)>0 else np.array([np.nan]) for d in data]
-        ax.boxplot(data, tick_labels=[f"E{e}" for e in epochs], showfliers=False)
-        ax.set_title(f'{label} distribution per epoch (boxplot)')
-        ax.set_xlabel('Epoch'); ax.set_ylabel(label)
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.savefig(os.path.join(out_dir, f'{metric_key}_boxplot.png'), dpi=150)
-        plt.close()
-
-    # json / csv summary
-    summary = []
-    for s in all_epoch_stats:
-        row = {
-            'epoch': s['epoch'],
-            'train_loss_mean': float(np.mean(s['losses'])) if len(s['losses'])>0 else None,
-            'val_dice_mean': float(np.nanmean(s.get('dices',[]))) if len(s.get('dices',[]))>0 else None,
-            'val_iou_mean': float(np.nanmean(s.get('ious',[]))) if len(s.get('ious',[]))>0 else None,
-            'val_precision_mean': float(np.nanmean(s.get('precisions',[]))) if len(s.get('precisions',[]))>0 else None,
-            'val_recall_mean': float(np.nanmean(s.get('recalls',[]))) if len(s.get('recalls',[]))>0 else None,
-            'val_f1_mean': float(np.nanmean(s.get('f1s',[]))) if len(s.get('f1s',[]))>0 else None,
-            'val_hd95_mean': float(np.nanmean([v for v in s.get('hd95s',[]) if not np.isnan(v)])) if len(s.get('hd95s',[]))>0 else None,
-            'val_assd_mean': float(np.nanmean([v for v in s.get('assds',[]) if not np.isnan(v)])) if len(s.get('assds',[]))>0 else None,
-            'val_cases': int(s.get('val_cases', 0)),
-            'val_skipped_empty_gt': int(s.get('skipped_empty_gt', 0)),
-            'val_fp_on_empty_gt': int(s.get('fp_on_empty_gt', 0)),
-        }
-        summary.append(row)
-    with open(os.path.join(out_dir, 'metrics_summary.json'), 'w') as f:
-        json.dump(summary, f, indent=2)
-    if summary:
-        csv_path = os.path.join(out_dir, 'metrics_summary.csv')
-        with open(csv_path, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=list(summary[0].keys()))
-            writer.writeheader()
-            for row in summary:
-                writer.writerow(row)
 
 def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag="epoch", out_dir="."):
     ckpt_path = os.path.join(out_dir, f"{tag}_{epoch}.pth")
