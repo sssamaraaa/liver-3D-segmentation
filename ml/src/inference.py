@@ -3,6 +3,7 @@ import numpy as np
 import nibabel as nib
 import argparse
 from data_preprocessing import resample_to_spacing, intensity_clip_normalize
+from model_loader import load_checkpoint, load_model
 from scipy.ndimage import zoom
 from model import UNet3D
 from torch.amp import autocast
@@ -144,26 +145,6 @@ def save_mask_nifti(mask, affine, out_path):
     nii = nib.Nifti1Image(mask.astype(np.uint8), affine)
     nib.save(nii, out_path)
 
-def load_checkpoint_fast(model, ckpt_path, device):
-    start = time.time()
-    ck = torch.load(ckpt_path, map_location=device, weights_only=False)
-    print(f"Checkpoint loaded in {time.time() - start:.2f}s")
-    
-    if isinstance(ck, dict):
-        state_dict = ck.get("model_state", ck.get("state_dict", ck.get("model", ck)))
-    else:
-        state_dict = ck
-    
-    new_state_dict = {}
-    for k, v in state_dict.items():
-        # OP 8: handle DataParallel model prefixes for compatibility
-        if k.startswith('module.'):  
-            k = k[7:]
-        new_state_dict[k] = v
-    
-    model.load_state_dict(new_state_dict, strict=False)
-    return model
-
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--model", required=True, help="Path to model checkpoint (.pth)")
@@ -230,7 +211,7 @@ def main():
     model_start = time.time()
     print("Building model and loading checkpoint (fast)...")
     model = UNet3D(in_ch=1, out_ch=1, base_filters=args.base_filters)
-    model = load_checkpoint_fast(model, args.model, device)
+    model = load_checkpoint(model, args.model, device)
     model.to(device)
     
     # OP 11: use half precision (FP16) for the entire model on GPU
@@ -279,6 +260,74 @@ def main():
     print(f"  - Model loading: {model_start - preprocess_start:.2f}s")
     print(f"  - Inference: {inference_time:.2f}s")
     print(f"  - Postprocessing: {time.time() - inference_start - inference_time:.2f}s")
+
+def inference(nifti_path, model, checkpoint_path, device, new_spacing, patch_size, stride_factor, batch_size, clip, threshold, save_path,):
+    # ensure we have a model
+    temp_model_loaded = False
+    if model is None:
+        if checkpoint_path is None:
+            raise ValueError("Either `model` or `checkpoint_path` must be provided.")
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        model_tmp, _ = load_model(checkpoint_path, device=device)
+        model = model_tmp
+        temp_model_loaded = True
+    else:
+        try:
+            device = next(model.parameters()).device.type
+        except StopIteration:
+            device = "cpu"
+
+    # load nifti and preprocess 
+    vol, orig_spacing, affine = load_nifti_with_meta(nifti_path)
+    orig_shape = vol.shape
+
+    vol_rs = resample_to_spacing(vol, orig_spacing, new_spacing, order=1)
+    vol_rs = intensity_clip_normalize(vol_rs, clip_min=float(clip[0]), clip_max=float(clip[1]))
+
+    # run sliding-window inference 
+
+    prob = sliding_window_inference(
+        vol_rs,
+        model,
+        torch.device("cuda" if device == "cuda" or device == "cuda:0" else "cpu"),
+        patch_size=patch_size,
+        stride_factor=stride_factor,
+        batch_size=batch_size,
+    )
+
+    # threshold and postproccess
+    mask_new_spacing = (prob >= threshold).astype(np.uint8)
+    mask_orig = postprocess_mask_to_orig(mask_new_spacing, orig_spacing, new_spacing, orig_shape)
+
+    # if needed
+    if save_path:
+        save_mask_nifti(mask_orig, affine, save_path)
+
+    # prepare metadata
+    voxel_volume_mm3 = abs(np.prod(orig_spacing))
+    liver_voxels = int(mask_orig.sum())
+    volume_ml = float(liver_voxels * voxel_volume_mm3 / 1000.0)
+
+    meta = {
+        "orig_shape": orig_shape,
+        "orig_spacing": orig_spacing,
+        "new_spacing": new_spacing,
+        "voxel_volume_mm3": voxel_volume_mm3,
+        "liver_voxels": liver_voxels,
+        "volume_ml": volume_ml,
+        "threshold": threshold,
+    }
+
+    # if we have temporarily uploaded the model
+    if temp_model_loaded:
+        try:
+            del model
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    return mask_orig.astype(np.uint8), meta
 
 if __name__ == "__main__":
     main()
