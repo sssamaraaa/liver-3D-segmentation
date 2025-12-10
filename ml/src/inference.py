@@ -2,12 +2,12 @@ import torch
 import numpy as np
 import nibabel as nib
 import argparse
-from data_preprocessing import resample_to_spacing, intensity_clip_normalize
-from model_loader import load_checkpoint, load_model
-from scipy.ndimage import zoom
-from model import UNet3D
-from torch.amp import autocast
 import time
+from scipy.ndimage import zoom
+from torch.amp import autocast
+from .data_preprocessing import resample_to_spacing, intensity_clip_normalize
+from .model_loader import load_checkpoint, load_model
+from .model import UNet3D
 
 
 def load_nifti_with_meta(path):

@@ -12,11 +12,11 @@ from glob import glob
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from data_loader import LiverPatchDataset, augment_ct3d
-from model import UNet3D, DiceBCELoss
-from inference import sliding_window_inference
 from scipy.ndimage import binary_erosion
 from scipy.spatial import cKDTree
+from .data_loader import LiverPatchDataset, augment_ct3d
+from .model import UNet3D, DiceBCELoss
+from .inference import sliding_window_inference
 
 # utils
 matplotlib.use("Agg")

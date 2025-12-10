@@ -11,10 +11,10 @@ from tqdm import tqdm
 from glob import glob
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
-from data_loader import LiverPatchDataset, augment_ct3d
-from inference import sliding_window_inference
-from model import UNet3D, DiceBCELoss
-from train import (
+from .data_loader import LiverPatchDataset, augment_ct3d
+from .inference import sliding_window_inference
+from .model import UNet3D, DiceBCELoss
+from .train import (
     seed_everything,
     worker_init_fn,
     dice_from_counts, 

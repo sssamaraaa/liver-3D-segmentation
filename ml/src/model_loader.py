@@ -1,7 +1,7 @@
 import os
 import torch
 import time
-from model import UNet3D
+from .model import UNet3D
 
 
 def load_checkpoint(model, ckpt_path, device):
