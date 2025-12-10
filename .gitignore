@@ -7,3 +7,7 @@ ml/src/metrics
 ml/src/__pycache__
 ml/src/test_on_client
 ml/src/results_ft
+
+backend/app/__pycache__
+backend/app/api/__pycache__
+backend/app/services/__pycache__
