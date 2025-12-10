@@ -261,7 +261,7 @@ def main():
     print(f"  - Inference: {inference_time:.2f}s")
     print(f"  - Postprocessing: {time.time() - inference_start - inference_time:.2f}s")
 
-def inference(nifti_path, model, checkpoint_path, device, new_spacing, patch_size, stride_factor, batch_size, clip, threshold, save_path,):
+def inference(nifti_path, model, device, save_path, new_spacing=[1.5, 1.5, 1.5], patch_size=[80, 160, 160], stride_factor=0.5, batch_size=8, clip=[-200, 250], threshold=0.45, checkpoint_path=None):
     # ensure we have a model
     temp_model_loaded = False
     if model is None:
@@ -310,13 +310,13 @@ def inference(nifti_path, model, checkpoint_path, device, new_spacing, patch_siz
     volume_ml = float(liver_voxels * voxel_volume_mm3 / 1000.0)
 
     meta = {
-        "orig_shape": orig_shape,
-        "orig_spacing": orig_spacing,
-        "new_spacing": new_spacing,
-        "voxel_volume_mm3": voxel_volume_mm3,
-        "liver_voxels": liver_voxels,
-        "volume_ml": volume_ml,
-        "threshold": threshold,
+        "orig_shape": list(orig_shape),  
+        "orig_spacing": [float(x) for x in orig_spacing],  
+        "new_spacing": [float(x) for x in new_spacing],  
+        "voxel_volume_mm3": float(voxel_volume_mm3),
+        "liver_voxels": int(liver_voxels),
+        "volume_ml": float(volume_ml),
+        "threshold": int(threshold) if isinstance(threshold, (int, np.integer)) else float(threshold),
     }
 
     # if we have temporarily uploaded the model
