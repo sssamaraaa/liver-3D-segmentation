@@ -1,4 +1,6 @@
 import os
+import json
+import datetime
 import numpy as np
 import nibabel as nib
 import pyvista as pv
@@ -73,9 +75,9 @@ def compute_metrics(mask, spacing, pv_mesh):
     
     bbox = tm.bounds  # (min_x, max_x, min_y, max_y, min_z, max_z)
     dimensions = [
-        float(bbox[1] - bbox[0]),  # ширина (x)
-        float(bbox[3] - bbox[2]),  # высота (y)
-        float(bbox[5] - bbox[4])   # глубина (z)
+        float(bbox[1] - bbox[0]),  # width (x)
+        float(bbox[3] - bbox[2]),  # height (y)
+        float(bbox[5] - bbox[4])   # depth (z)
     ]
     
     mesh_quality = {
@@ -104,9 +106,6 @@ def compute_metrics(mask, spacing, pv_mesh):
     }
 
 def export_mesh(mesh, mask, affine, output_dir, name="liver", save_mask=True, generate_previews=True):
-    """
-    Полный экспорт: меш, маска, превью, JSON.
-    """
     os.makedirs(output_dir, exist_ok=True)
     
     # mesh (STL, PLY)
@@ -167,15 +166,42 @@ def export_mesh(mesh, mask, affine, output_dir, name="liver", save_mask=True, ge
         "mask": mask_paths
     }
 
-def build_liver_mesh( mask_path, output_dir, min_component_size=5000, smooth_iter=30, decimate_ratio=0.5, mesh_name="liver"):
-    mask, spacing = load_mask(mask_path)
-    cleaned_mask = remove_small_components(mask, min_size=min_component_size)
-    pv_mesh = mask_to_mesh(cleaned_mask, spacing)
+def build_liver_mesh(mask_path,  output_dir, min_component_size=5000, smooth_iter=30,  decimate_ratio=0.5, mesh_name="liver", fill_holes=True, level=0.5, generate_report=True):
+    mask, spacing, affine = load_mask(mask_path)
+    cleaned_mask = remove_small_components(mask, min_size=min_component_size, fill_holes=fill_holes)
+    pv_mesh = mask_to_mesh(cleaned_mask, spacing, level=level)
     pv_mesh = postprocess_mesh(pv_mesh, smooth_iter=smooth_iter, decimate_ratio=decimate_ratio)
     metrics = compute_metrics(cleaned_mask, spacing, pv_mesh)
-    outputs = export_mesh(pv_mesh, output_dir, name=mesh_name)
-
+    outputs = export_mesh(pv_mesh, cleaned_mask, affine, output_dir, name=mesh_name, save_mask=True, generate_previews=True)
+    
+    if generate_report:
+        report = {
+            "metadata": {
+                "input_mask": mask_path,
+                "output_directory": output_dir,
+                "processing_date": datetime.now().isoformat(),
+                "mesh_name": mesh_name
+            },
+            "parameters": {
+                "min_component_size": min_component_size,
+                "smooth_iterations": smooth_iter,
+                "decimate_ratio": decimate_ratio,
+                "fill_holes": fill_holes,
+                "marching_cubes_level": level
+            },
+            "metrics": metrics,
+            "output_files": outputs
+        }
+        
+        report_path = os.path.join(output_dir, f"{mesh_name}_report.json")
+        with open(report_path, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+        
+        outputs["report_json"] = report_path
+    
     return {
-        "mesh_paths": outputs,
-        "metrics": metrics
+        "mesh": pv_mesh,  # object
+        "cleaned_mask": cleaned_mask,  # mask
+        "outputs": outputs,  # paths to files
+        "metrics": metrics  # all metrics
     }
