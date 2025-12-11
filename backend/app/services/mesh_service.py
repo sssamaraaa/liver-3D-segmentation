@@ -14,7 +14,8 @@ def load_mask(mask_path):
     img = nib.load(mask_path)
     mask = img.get_fdata().astype(np.uint8)
     spacing = img.header.get_zooms()  # (z, y, x)
-    return mask, spacing
+    affine = img.affine
+    return mask, spacing, affine
 
 def remove_small_components(mask, min_size=5000, fill_holes=True):
     labeled, num = ndimage.label(mask)
@@ -31,13 +32,13 @@ def remove_small_components(mask, min_size=5000, fill_holes=True):
 
     return cleaned
 
-def mask_to_mesh(mask, spacing, step_size=1):
+def mask_to_mesh(mask, spacing, level=0.5, step_size=1):
     if mask.sum() == 0:
         raise ValueError("Mask is empty!")
     
     verts, faces, _, _ = measure.marching_cubes(
         volume=mask,
-        level=0.5,
+        level=level,
         spacing=spacing,
         step_size=step_size,  
         allow_degenerate=False
@@ -65,7 +66,7 @@ def pyvista_to_trimesh(pv_mesh):
 def compute_metrics(mask, spacing, pv_mesh):
     tm = pyvista_to_trimesh(pv_mesh)
     
-    voxel_vol = float(np.prod(spacing))
+    voxel_vol = spacing[0]*spacing[1]*spacing[2]
     volume_voxels = float(np.sum(mask > 0) * voxel_vol)
     volume_mesh = float(tm.volume) if tm.is_watertight else volume_voxels
     
@@ -137,15 +138,15 @@ def export_mesh(mesh, mask, affine, output_dir, name="liver", save_mask=True, ge
             
             # (axial) - XY plane
             axial_path = os.path.join(preview_dir, f"{name}_axial_z{z_center}.png")
-            plt.imsave(axial_path, mask[z_center, :, :], cmap='gray')
+            plt.imsave(axial_path, mask[z_center, :, :], cmap='gray', vmin=0, vmax=1)
             
             # (coronal) - XZ plane
             coronal_path = os.path.join(preview_dir, f"{name}_coronal_y{y_center}.png")
-            plt.imsave(coronal_path, mask[:, y_center, :], cmap='gray')
+            plt.imsave(coronal_path, mask[:, y_center, :], cmap='gray', vmin=0, vmax=1)
             
             # (sagittal) - YZ plane
             sagittal_path = os.path.join(preview_dir, f"{name}_sagittal_x{x_center}.png")
-            plt.imsave(sagittal_path, mask[:, :, x_center], cmap='gray')
+            plt.imsave(sagittal_path, mask[:, :, x_center], cmap='gray', vmin=0, vmax=1)
             
             mask_paths["previews"] = {
                 "axial": axial_path,
@@ -179,7 +180,7 @@ def build_liver_mesh(mask_path,  output_dir, min_component_size=5000, smooth_ite
             "metadata": {
                 "input_mask": mask_path,
                 "output_directory": output_dir,
-                "processing_date": datetime.now().isoformat(),
+                "processing_date": datetime.datetime.now().isoformat(),
                 "mesh_name": mesh_name
             },
             "parameters": {
