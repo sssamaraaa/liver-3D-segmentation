@@ -21,6 +21,9 @@ def remove_small_components(mask, min_size=5000):
     for i, s in enumerate(sizes, 1):
         if s >= min_size:
             cleaned[labeled == i] = 1
+
+    struct = ndimage.generate_binary_structure(3, 1)  
+    cleaned = ndimage.binary_closing(cleaned, structure=struct, iterations=1).astype(np.uint8)
     return cleaned
 
 def mask_to_mesh(mask, spacing):
@@ -44,14 +47,13 @@ def postprocess_mesh(mesh, smooth_iter=30, decimate_ratio=0.5):
 
 def pyvista_to_trimesh(pv_mesh):
     verts = pv_mesh.points.copy()
-    # pv_mesh.faces — flat array like [n, v0, v1, v2, n, v0, v1, v2, ...]
     faces_flat = pv_mesh.faces.reshape((-1, 4))
     faces = faces_flat[:, 1:4].copy()
     tm = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
     return tm
 
 def compute_metrics(mask, spacing, pv_mesh):
-    voxel_volume = float(spacing[0] * spacing[1] * spacing[2])  # mm^3
+    voxel_volume = float(spacing[0] * spacing[1] * spacing[2]) 
     volume_mm3 = float(np.sum(mask > 0) * voxel_volume)
     volume_ml = volume_mm3 / 1000.0
 
