@@ -1,10 +1,11 @@
 import os
 import numpy as np
 import nibabel as nib
-from skimage import measure
-from scipy import ndimage
 import pyvista as pv
 import trimesh
+import matplotlib.pyplot as plt
+from skimage import measure
+from scipy import ndimage
 
 
 def load_mask(mask_path):
@@ -102,26 +103,68 @@ def compute_metrics(mask, spacing, pv_mesh):
         "mask_shape": list(mask.shape)
     }
 
-def export_mesh(mesh, output_dir, name="liver"):
+def export_mesh(mesh, mask, affine, output_dir, name="liver", save_mask=True, generate_previews=True):
+    """
+    Полный экспорт: меш, маска, превью, JSON.
+    """
     os.makedirs(output_dir, exist_ok=True)
+    
+    # mesh (STL, PLY)
     tm = pyvista_to_trimesh(mesh)
-
+    
     stl_path = os.path.join(output_dir, f"{name}.stl")
     ply_path = os.path.join(output_dir, f"{name}.ply")
-
-    tm.export(stl_path)
-    tm.export(ply_path)
-
-    pv_preview = os.path.join(output_dir, f"{name}_pv.vtk")
+    
+    tm.export(stl_path, file_type='stl_binary')
+    tm.export(ply_path, file_type='ply')
+    
+    # mask (NIfTI and PNG)
+    mask_paths = {}
+    if save_mask and mask is not None and affine is not None:
+        # NIfTI
+        mask_nii_path = os.path.join(output_dir, f"{name}_mask.nii.gz")
+        mask_img = nib.Nifti1Image(mask.astype(np.uint8), affine)
+        nib.save(mask_img, mask_nii_path)
+        mask_paths["nifti"] = mask_nii_path
+        
+        # PNG (axial, coronal, saggital)
+        if generate_previews:
+            preview_dir = os.path.join(output_dir, "previews")
+            os.makedirs(preview_dir, exist_ok=True)
+            
+            z_center = mask.shape[0] // 2
+            y_center = mask.shape[1] // 2
+            x_center = mask.shape[2] // 2
+            
+            # (axial) - XY plane
+            axial_path = os.path.join(preview_dir, f"{name}_axial_z{z_center}.png")
+            plt.imsave(axial_path, mask[z_center, :, :], cmap='gray')
+            
+            # (coronal) - XZ plane
+            coronal_path = os.path.join(preview_dir, f"{name}_coronal_y{y_center}.png")
+            plt.imsave(coronal_path, mask[:, y_center, :], cmap='gray')
+            
+            # (sagittal) - YZ plane
+            sagittal_path = os.path.join(preview_dir, f"{name}_sagittal_x{x_center}.png")
+            plt.imsave(sagittal_path, mask[:, :, x_center], cmap='gray')
+            
+            mask_paths["previews"] = {
+                "axial": axial_path,
+                "coronal": coronal_path,
+                "sagittal": sagittal_path
+            }
+    
+    pv_preview = os.path.join(output_dir, f"{name}_preview.vtk")
     try:
         mesh.save(pv_preview)
     except Exception:
         pv_preview = None
-
+    
     return {
-        "stl": stl_path,
-        "ply": ply_path,
-        "pv_preview": pv_preview
+        "mesh_stl": stl_path,
+        "mesh_ply": ply_path,
+        "mesh_preview": pv_preview,
+        "mask": mask_paths
     }
 
 def build_liver_mesh( mask_path, output_dir, min_component_size=5000, smooth_iter=30, decimate_ratio=0.5, mesh_name="liver"):
