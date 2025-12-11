@@ -2,7 +2,7 @@ import os
 import tempfile as temp
 from fastapi import APIRouter, Request, UploadFile, File
 from fastapi import HTTPException
-from services.inference_service import run_inference
+from backend.app.services.inference_service import run_inference
 from backend.app.services.convert_dcm import convert_dcm_to_nifti, is_dicom_folder, is_archive
 
 
