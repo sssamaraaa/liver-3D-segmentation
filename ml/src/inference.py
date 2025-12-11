@@ -286,7 +286,6 @@ def inference(nifti_path, model, device, save_path, new_spacing=[1.5, 1.5, 1.5],
     vol_rs = intensity_clip_normalize(vol_rs, clip_min=float(clip[0]), clip_max=float(clip[1]))
 
     # run sliding-window inference 
-
     prob = sliding_window_inference(
         vol_rs,
         model,
@@ -304,21 +303,6 @@ def inference(nifti_path, model, device, save_path, new_spacing=[1.5, 1.5, 1.5],
     if save_path:
         save_mask_nifti(mask_orig, affine, save_path)
 
-    # prepare metadata
-    voxel_volume_mm3 = abs(np.prod(orig_spacing))
-    liver_voxels = int(mask_orig.sum())
-    volume_ml = float(liver_voxels * voxel_volume_mm3 / 1000.0)
-
-    meta = {
-        "orig_shape": list(orig_shape),  
-        "orig_spacing": [float(x) for x in orig_spacing],  
-        "new_spacing": [float(x) for x in new_spacing],  
-        "voxel_volume_mm3": float(voxel_volume_mm3),
-        "liver_voxels": int(liver_voxels),
-        "volume_ml": float(volume_ml),
-        "threshold": int(threshold) if isinstance(threshold, (int, np.integer)) else float(threshold),
-    }
-
     # if we have temporarily uploaded the model
     if temp_model_loaded:
         try:
@@ -327,7 +311,7 @@ def inference(nifti_path, model, device, save_path, new_spacing=[1.5, 1.5, 1.5],
         except Exception:
             pass
 
-    return mask_orig.astype(np.uint8), meta
+    return mask_orig.astype(np.uint8)
 
 if __name__ == "__main__":
     main()
