@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from ml.src.model_loader import load_model
-from app.api.predict import router_predict
-from app.api.mesh import router_mesh
+from backend.app.api.predict import router_predict
+from backend.app.api.mesh import router_mesh
 
 
 app = FastAPI(
