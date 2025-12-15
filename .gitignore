@@ -1,5 +1,6 @@
 .venv/
 
+ml/__pycache__
 ml/src/results
 ml/src/datasets
 ml/src/test
