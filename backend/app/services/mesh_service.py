@@ -63,47 +63,67 @@ def pyvista_to_trimesh(pv_mesh):
     tm = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
     return tm
 
+def to_float(x):
+    """Convert trimesh / numpy output to a Python float safely"""
+    if isinstance(x, np.ndarray):
+        return float(np.sum(x))
+    return float(x)
+
+
+def safe_bounds(bounds):
+    """Normalize bounds to (dx, dy, dz). Accepts: shape (2, 3) / shape (6,)"""
+    b = np.asarray(bounds)
+
+    if b.shape == (2, 3):
+        return (b[1] - b[0]).astype(float).tolist()
+
+    if b.shape == (6,):
+        return [
+            float(b[1] - b[0]),
+            float(b[3] - b[2]),
+            float(b[5] - b[4]),
+        ]
+
+    raise ValueError(f"Unexpected bounds shape: {b.shape}")
+
 def compute_metrics(mask, spacing, pv_mesh):
     tm = pyvista_to_trimesh(pv_mesh)
-    
-    voxel_vol = spacing[0]*spacing[1]*spacing[2]
+
+    voxel_vol = spacing[0] * spacing[1] * spacing[2]
     volume_voxels = float(np.sum(mask > 0) * voxel_vol)
-    volume_mesh = float(tm.volume) if tm.is_watertight else volume_voxels
-    
-    surface_area = float(tm.area)
-    
-    com = tm.center_mass.tolist() if hasattr(tm, 'center_mass') else pv_mesh.center_of_mass().tolist()
-    
-    bbox = tm.bounds  # (min_x, max_x, min_y, max_y, min_z, max_z)
-    dimensions = [
-        float(bbox[1] - bbox[0]),  # width (x)
-        float(bbox[3] - bbox[2]),  # height (y)
-        float(bbox[5] - bbox[4])   # depth (z)
-    ]
-    
+
+    if tm.is_watertight:
+        volume_mesh = abs(to_float(tm.volume))   
+    else:
+        volume_mesh = volume_voxels
+
+    surface_area = to_float(tm.area)
+    com = np.asarray(tm.center_mass, dtype=float).reshape(-1).tolist()
+    dimensions = safe_bounds(tm.bounds)
+
     mesh_quality = {
         "is_watertight": bool(tm.is_watertight),
         "euler_characteristic": int(tm.euler_number),
         "number_of_triangles": int(len(tm.faces)),
-        "number_of_vertices": int(len(tm.vertices))
+        "number_of_vertices": int(len(tm.vertices)),
     }
-    
+
     return {
         "volume_ml": round(volume_mesh / 1000.0, 2),
         "volume_mm3": round(volume_mesh, 2),
         "surface_mm2": round(surface_area, 2),
         "center_of_mass": [round(c, 2) for c in com],
-        
+
         "dimensions_mm": [round(d, 2) for d in dimensions],
         "voxel_based_volume_ml": round(volume_voxels / 1000.0, 2),
         "volume_discrepancy_percent": round(
             abs(volume_mesh - volume_voxels) / volume_voxels * 100, 2
         ) if volume_voxels > 0 else 0.0,
-        
+
         "mesh_quality": mesh_quality,
-        
+
         "spacing_mm": [float(s) for s in spacing],
-        "mask_shape": list(mask.shape)
+        "mask_shape": list(mask.shape),
     }
 
 def export_mesh(mesh, mask, affine, output_dir, name="liver", save_mask=True, generate_previews=True):
@@ -115,7 +135,7 @@ def export_mesh(mesh, mask, affine, output_dir, name="liver", save_mask=True, ge
     stl_path = os.path.join(output_dir, f"{name}.stl")
     ply_path = os.path.join(output_dir, f"{name}.ply")
     
-    tm.export(stl_path, file_type='stl_binary')
+    tm.export(stl_path, file_type='stl')
     tm.export(ply_path, file_type='ply')
     
     # mask (NIfTI and PNG)
