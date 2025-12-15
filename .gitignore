@@ -1,4 +1,5 @@
 .venv/
+.env
 
 ml/__pycache__
 ml/src/results
