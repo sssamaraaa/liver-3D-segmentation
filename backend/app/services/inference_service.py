@@ -5,14 +5,11 @@ import os
 def run_inference(nifti_path, model, device, output_dir):
     mask_path = os.path.join(output_dir, "mask.nii.gz")
 
-    mask, meta = inference(
+    _ = inference(
         nifti_path,
         model=model,
         device=device,
         save_path=mask_path
     )
 
-    return {
-        "mask_path": mask_path,
-        "meta": meta
-    }
+    return mask_path
