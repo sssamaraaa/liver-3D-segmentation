@@ -1,17 +1,23 @@
 export async function buildMesh(maskPath) {
-  const response = await fetch("http://localhost:8000/mesh/build", {
+  console.log('Building mesh for:', maskPath);
+  
+  const res = await fetch("http://localhost:8000/mesh/build", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       mask_path: maskPath,
+      smooth_iter: 30,
+      decimate_ratio: 0.5,
     }),
   });
 
-  if (!response.ok) {
-    throw new Error("Mesh build failed");
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error('Mesh error:', errorText);
+    throw new Error(`Mesh build failed: ${res.status} ${errorText}`);
   }
 
-  return await response.json();
+  return await res.json();
 }
