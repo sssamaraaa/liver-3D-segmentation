@@ -13,3 +13,5 @@ ml/src/results_ft
 backend/app/__pycache__
 backend/app/api/__pycache__
 backend/app/services/__pycache__
+
+frontend/node_modules
