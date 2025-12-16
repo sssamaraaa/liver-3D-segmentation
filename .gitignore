@@ -15,3 +15,15 @@ backend/app/api/__pycache__
 backend/app/services/__pycache__
 
 frontend/node_modules
+
+storage
+
+tests/
+
+nginx/conf
+nginx/contrib/
+nginx/docs
+nginx/html
+nginx/logs
+nginx/temp
+nginx/nginx.exe
