@@ -1,51 +1,49 @@
 import { useState } from "react";
-import { uploadSegmentation } from "./api/segmentation";
+import { runSegmentation } from "./api/segmentation";
 import { buildMesh } from "./api/mesh";
 
 export default function App() {
-  const [file, setFile] = useState(null);
-  const [maskPath, setMaskPath] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [metrics, setMetrics] = useState(null);
 
-  async function handleSegmentation() {
-    if (!file) return alert("Файл не выбран");
+  async function handleFile(file) {
+    try {
+      setLoading(true);
 
-    const result = await uploadSegmentation(file);
-    setMaskPath(result.mask_path);
-  }
+      const seg = await runSegmentation(file);
+      const mesh = await buildMesh(seg.mask_path);
 
-  async function handleMesh() {
-    if (!maskPath) return alert("Нет mask_path");
-
-    const result = await buildMesh(maskPath);
-    setMetrics(result.metrics);
+      setMetrics(mesh.metrics);
+    } catch (e) {
+      console.error(e);
+      alert("Ошибка обработки");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Liver segmentation MVP</h1>
+    <div className="h-screen w-screen bg-zinc-900 text-zinc-100 flex items-center justify-center">
+      {!metrics && !loading && (
+        <label className="bg-emerald-600 px-4 py-2 rounded cursor-pointer">
+          Загрузить файл
+          <input
+            type="file"
+            accept=".nii,.nii.gz"
+            className="hidden"
+            onChange={(e) => handleFile(e.target.files[0])}
+          />
+        </label>
+      )}
 
-      <input
-        type="file"
-        onChange={(e) => setFile(e.target.files[0])}
-      />
-
-      <br /><br />
-
-      <button onClick={handleSegmentation}>
-        1. Сегментировать
-      </button>
-
-      <br /><br />
-
-      <button onClick={handleMesh}>
-        2. Построить меш
-      </button>
+      {loading && <div>Обработка данных…</div>}
 
       {metrics && (
-        <pre>{JSON.stringify(metrics, null, 2)}</pre>
+        <div className="space-y-2">
+          <div>Объём: {metrics.volume_ml} мл</div>
+          <div>Площадь: {metrics.surface_mm2} мм²</div>
+        </div>
       )}
     </div>
   );
 }
-
