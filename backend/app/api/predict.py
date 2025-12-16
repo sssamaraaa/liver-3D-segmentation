@@ -1,5 +1,4 @@
 import os
-import tempfile as temp
 from fastapi import APIRouter, Request, UploadFile, File
 from fastapi import HTTPException
 from backend.app.services.inference_service import run_inference
@@ -10,8 +9,7 @@ router_predict = APIRouter()
 
 @router_predict.post("/predict")
 async def predict(request: Request, file: UploadFile = File(...)):
-    tmp = temp.mkdtemp()
-    input_path = os.path.join(tmp, file.filename)
+    input_path = os.path.join("storage", file.filename)
 
     with open(input_path, "wb") as f:
         f.write(await file.read())
@@ -39,7 +37,7 @@ async def predict(request: Request, file: UploadFile = File(...)):
         to_infer, 
         model=model, 
         device=model_info["device"], 
-        output_dir=tmp
+        output_dir="storage"
     )
 
     return result

@@ -1,5 +1,4 @@
 import os
-import tempfile
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from backend.app.services.mesh_service import build_liver_mesh
@@ -17,7 +16,7 @@ def build_mesh(request: MeshRequest):
     if not os.path.exists(request.mask_path):
         raise HTTPException(status_code=404, detail="Mask file not found")
 
-    output_dir = tempfile.mkdtemp(prefix="mesh_")
+    output_dir = "storage"
 
     try:
         result = build_liver_mesh(
