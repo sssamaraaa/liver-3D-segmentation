@@ -1,1 +1,147 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
+html, body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family: sans-serif;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+.app-container {
+  width: 100vw;
+  height: 100vh;
+  background: #09090b;
+  color: white;
+}
+
+.upload-screen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0c0c0e 0%, #1a1a1e 100%);
+}
+
+.upload-content {
+  text-align: center;
+  padding: 40px;
+  background: rgba(24, 24, 27, 0.9);
+  border-radius: 16px;
+  border: 1px solid #27272a;
+  backdrop-filter: blur(10px);
+}
+
+.upload-title {
+  font-size: 2.5rem;
+  margin-bottom: 2rem;
+  color: white;
+}
+
+.upload-button {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 16px 32px;
+  font-size: 1.1rem;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.upload-button:hover {
+  background: #059669;
+  transform: translateY(-2px);
+}
+
+.upload-hint {
+  color: #a1a1aa;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.viewer-screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+}
+
+/* ЛЕВАЯ ПАНЕЛЬ */
+.sidebar-left {
+  width: 250px;
+  background: #18181b;
+  border-right: 1px solid #27272a;
+  padding: 20px;
+}
+
+/* ЦЕНТРАЛЬНАЯ ОБЛАСТЬ */
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ВЕРХНЯЯ ПАНЕЛЬ */
+.top-bar {
+  height: 64px;
+  background: #18181b;
+  border-bottom: 1px solid #27272a;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+}
+
+/* ОКНО 3D МОДЕЛИ*/
+.viewer-container {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.viewer-3d-wrapper {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* ПРАВАЯ ПАНЕЛЬ */
+.sidebar-right {
+  width: 300px;
+  background: #18181b;
+  border-left: 1px solid #27272a;
+  padding: 20px;
+}
+
+/* КАНВАС Three.js */
+canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+}
+
+/* ОБРАБОТКА */
+.processing-screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #09090b;
+  color: white;
+  font-size: 1.5rem;
+}
