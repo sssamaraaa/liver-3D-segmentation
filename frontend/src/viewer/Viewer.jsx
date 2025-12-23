@@ -24,7 +24,14 @@ export default function Viewer() {
     );
   }
   
-    const maskPath = meshData?.files?.mask?.nifti; 
-  
-  return <SliceViewer maskPath={maskPath} viewType={view} />;
+    const ctPath = meshData?.ct_path || meshData?.files?.ct;
+    const maskPath = meshData?.mask_path || meshData?.files?.mask;
+
+  return (
+    <SliceViewer
+      ctPath={ctPath}
+      maskPath={maskPath}
+      axis={view}
+    />
+  );
 }
