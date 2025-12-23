@@ -18,8 +18,8 @@ def run_inference(nifti_path, model, device, output_dir):
     abs_mask_path = os.path.abspath(mask_path)
     
     return {
+        "ct_path": os.path.abspath(nifti_path),
         "mask_path": abs_mask_path,
         "filename": mask_filename,
-        "status": "success",
-        "message": "Segmentation completed"
+        "status": "success"
     }
