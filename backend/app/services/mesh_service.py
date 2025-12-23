@@ -17,7 +17,7 @@ def load_mask(mask_path):
     affine = img.affine
     return mask, spacing, affine
 
-def remove_small_components(mask, min_size=5000, fill_holes=True):
+def remove_small_components(mask, min_size=500000, fill_holes=True):
     labeled, num = ndimage.label(mask)
     sizes = ndimage.sum(mask, labeled, range(1, num + 1))
 
@@ -187,7 +187,7 @@ def export_mesh(mesh, mask, affine, output_dir, name="liver", save_mask=True, ge
         "mask": mask_paths
     }
 
-def build_liver_mesh(mask_path,  output_dir, min_component_size=5000, smooth_iter=30,  decimate_ratio=0.5, mesh_name="liver", fill_holes=True, level=0.5, generate_report=True):
+def build_liver_mesh(mask_path,  output_dir, min_component_size=500000, smooth_iter=30,  decimate_ratio=0.5, mesh_name="liver", fill_holes=True, level=0.5, generate_report=True):
     mask, spacing, affine = load_mask(mask_path)
     cleaned_mask = remove_small_components(mask, min_size=min_component_size, fill_holes=fill_holes)
     pv_mesh = mask_to_mesh(cleaned_mask, spacing, level=level)
