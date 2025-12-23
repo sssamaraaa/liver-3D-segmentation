@@ -1,16 +1,17 @@
-export async function fetchSliceStack(maskPath, axis) {
-  const res = await fetch("http://localhost:8000/slices/stack", {
+export async function fetchOverlay(ctPath, maskPath, axis) {
+  const res = await fetch("http://localhost:8000/slices/overlay", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      ct_path: ctPath,
       mask_path: maskPath,
       axis,
     }),
   });
 
   if (!res.ok) {
-    throw new Error("Failed to load slices");
+    throw new Error("Overlay request failed");
   }
 
-  return await res.json();
+  return res.json();
 }
