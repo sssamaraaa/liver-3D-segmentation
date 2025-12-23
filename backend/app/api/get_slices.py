@@ -2,59 +2,77 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import nibabel as nib
 import numpy as np
-import base64
 import cv2
+import base64
 import os
 
 
 router_slices = APIRouter()
 
-class SliceRequest(BaseModel):
-    mask_path: str      
-    axis: str           
+class OverlayRequest(BaseModel):
+    ct_path: str
+    mask_path: str
+    axis: str
+    window: int = 400
+    level: int = 40
+    alpha: float = 0.4
 
-def slice_stack_to_base64(stack: np.ndarray):
-    images = []
+def window_ct(ct, window, level):
+    low = level - window / 2
+    high = level + window / 2
+    ct = np.clip(ct, low, high)
+    ct = (ct - low) / (high - low)
+    return (ct * 255).astype(np.uint8)
 
-    for i in range(stack.shape[0]):
-        slice_ = stack[i].astype(np.float32)
+@router_slices.post("/overlay")
+def overlay_slices(req: OverlayRequest):
+    ct_path = req.ct_path.lstrip("/")
+    mask_path = req.mask_path.lstrip("/")
 
-        min_val = slice_.min()
-        range_val = np.ptp(slice_) + 1e-6
+    if not os.path.exists(ct_path) or not os.path.exists(mask_path):
+        raise HTTPException(404, "CT or mask not found")
 
-        slice_ = (slice_ - min_val) / range_val
-        slice_ = (slice_ * 255).astype(np.uint8)
+    ct = nib.load(ct_path).get_fdata()
+    mask = nib.load(mask_path).get_fdata()
 
-        png = cv2.imencode(".png", slice_)[1]
-        b64 = base64.b64encode(png).decode("utf-8")
-        images.append(b64)
-
-    return images
-
-@router_slices.post("/stack")
-def get_slice_stack(req: SliceRequest):
-    path = req.mask_path.lstrip("/")
-
-    if not os.path.exists(path):
-        raise HTTPException(404, "Mask file not found")
-
-    nii = nib.load(path)
-    data = nii.get_fdata()
-
-    data = (data > 0).astype(np.uint8)
+    if ct.shape != mask.shape:
+        raise HTTPException(
+            400,
+            f"Shape mismatch: CT {ct.shape}, mask {mask.shape}",
+        )
 
     if req.axis == "axial":
-        stack = np.transpose(data, (2, 1, 0))
+        ct = np.transpose(ct, (2, 1, 0))
+        mask = np.transpose(mask, (2, 1, 0))
     elif req.axis == "coronal":
-        stack = np.transpose(data, (1, 2, 0))
+        ct = np.transpose(ct, (1, 2, 0))
+        mask = np.transpose(mask, (1, 2, 0))
     elif req.axis == "sagittal":
-        stack = np.transpose(data, (0, 2, 1))
+        ct = np.transpose(ct, (0, 2, 1))
+        mask = np.transpose(mask, (0, 2, 1))
     else:
         raise HTTPException(400, "Invalid axis")
 
-    images = slice_stack_to_base64(stack)
+    images = []
+
+    for i in range(ct.shape[0]):
+        ct_slice = window_ct(ct[i], req.window, req.level)
+
+        rgb = cv2.cvtColor(ct_slice, cv2.COLOR_GRAY2RGB)
+
+        mask_bool = mask[i] > 0
+        overlay_color = np.zeros_like(rgb)
+        overlay_color[..., 0] = 255  
+
+        rgb[mask_bool] = (
+            (1 - req.alpha) * rgb[mask_bool]
+            + req.alpha * overlay_color[mask_bool]
+        ).astype(np.uint8)
+
+        _, png = cv2.imencode(".png", rgb)
+        images.append(base64.b64encode(png).decode())
 
     return {
         "count": len(images),
-        "slices": images
+        "slices": images,
     }
