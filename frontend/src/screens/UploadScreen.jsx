@@ -16,7 +16,8 @@ export default function UploadScreen() {
         files: {
           ...mesh.files,
           mesh_stl: '/' + mesh.files.mesh_stl.replace(/\\/g, '/'),
-          mesh_ply: '/' + mesh.files.mesh_ply.replace(/\\/g, '/')
+          mesh_ply: '/' + mesh.files.mesh_ply.replace(/\\/g, '/'),
+          mask: mesh.files.mask
         }
       };
       
