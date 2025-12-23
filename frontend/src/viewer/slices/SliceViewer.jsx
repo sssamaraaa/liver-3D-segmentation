@@ -1,42 +1,56 @@
 import { useEffect, useState } from "react";
-import { fetchSliceStack } from "/src/api/slices.js";
-import SliceCanvas from "./SliceCanvas";
+import { fetchOverlay } from "/src/api/slices.js";
 
-export default function SliceViewer({ maskPath, viewType }) {
-  const [stack, setStack] = useState([]);
+export default function SliceViewer({ ctPath, maskPath, axis }) {
+  const [slices, setSlices] = useState([]);
   const [index, setIndex] = useState(0);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!maskPath) return;
+    if (!ctPath || !maskPath) return;
 
-    setLoading(true);
-    fetchSliceStack(maskPath, viewType)
-      .then((data) => {
-        setStack(data.slices);
-        setIndex(Math.floor(data.slices.length / 2));
-      })
-      .finally(() => setLoading(false));
-  }, [maskPath, viewType]);
+        fetchOverlay(ctPath, maskPath, axis)
+          .then(data => {
+            setSlices(data.slices);
+            setIndex(Math.floor(data.slices.length / 2));
+          })
+          .catch(console.error);
+      }, [ctPath, maskPath, axis]);
 
-  if (loading) return <div>Загрузка срезов…</div>;
-  if (!stack.length) return null;
+      if (!slices.length) {
+        return <div style={{ color: "white" }}>Загрузка срезов…</div>;
+      }
 
   return (
-    <div className="w-full h-full flex flex-col">
-      <SliceCanvas image={stack[index]} />
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        background: "black",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center"
+      }}
+    >
+      <img
+        src={`data:image/png;base64,${slices[index]}`}
+        alt="slice"
+        style={{
+          maxHeight: "80vh",
+          imageRendering: "pixelated"
+        }}
+      />
 
       <input
         type="range"
         min={0}
-        max={stack.length - 1}
+        max={slices.length - 1}
         value={index}
-        onChange={(e) => setIndex(Number(e.target.value))}
-        className="w-full mt-2"
+        onChange={e => setIndex(Number(e.target.value))}
+        style={{ width: "80%", marginTop: 10 }}
       />
 
-      <div className="text-sm text-center">
-        Срез {index + 1} / {stack.length}
+      <div style={{ color: "white" }}>
+        {axis} slice {index + 1} / {slices.length}
       </div>
     </div>
   );
