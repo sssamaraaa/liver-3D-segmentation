@@ -2,7 +2,7 @@ import os
 import nibabel as nib
 
 
-def convert_orientation_to_canonical(nifti_path, suffix):
+def convert_orientation_to_canonical(nifti_path, suffix: str = "_canon"):
     if not os.path.exists(nifti_path):
         raise FileNotFoundError(nifti_path)
 
