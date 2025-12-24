@@ -1,56 +1,81 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState} from "react";
 import { fetchOverlay } from "/src/api/slices.js";
 
 export default function SliceViewer({ ctPath, maskPath, axis }) {
   const [slices, setSlices] = useState([]);
   const [index, setIndex] = useState(0);
+  const [originalSize, setOriginalSize] = useState("");
 
   useEffect(() => {
     if (!ctPath || !maskPath) return;
 
-        fetchOverlay(ctPath, maskPath, axis)
-          .then(data => {
-            setSlices(data.slices);
-            setIndex(Math.floor(data.slices.length / 2));
-          })
-          .catch(console.error);
-      }, [ctPath, maskPath, axis]);
+    fetchOverlay(ctPath, maskPath, axis)
+      .then(data => {
+        setSlices(data.slices);
+        setIndex(Math.floor(data.slices.length / 2));
+        if (data.image_size) {
+          setOriginalSize(`${data.image_size[0]}×${data.image_size[1]}`);
+        }
+      })
+      .catch(console.error);
+  }, [ctPath, maskPath, axis]);
 
-      if (!slices.length) {
-        return <div style={{ color: "white" }}>Загрузка срезов…</div>;
-      }
+  useEffect(() => {
+    if (slices.length && !originalSize) {
+      const img = new Image();
+      img.onload = () => {
+        setOriginalSize(`${img.naturalWidth}×${img.naturalHeight}`);
+      };
+      img.src = `data:image/png;base64,${slices[index]}`;
+    }
+  }, [slices, index, originalSize]);
+
+  if (!slices.length) {
+    return (
+      <div className="slice-viewer slice-viewer--loading">
+        Загрузка срезов…
+      </div>
+    );
+  }
+
+  const isNonStandardSize = originalSize && !originalSize.includes('512×512');
+  const isLargeImage = originalSize && originalSize.includes('1024');
 
   return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        background: "black",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center"
-      }}
-    >
-      <img
-        src={`data:image/png;base64,${slices[index]}`}
-        alt="slice"
-        style={{
-          maxHeight: "80vh",
-          imageRendering: "pixelated"
-        }}
-      />
+    <div className="slice-viewer">
+      <div className="slice-container">
+        <img
+          src={`data:image/png;base64,${slices[index]}`}
+          alt="slice"
+          className="slice-image"
+        />
+      </div>
 
-      <input
-        type="range"
-        min={0}
-        max={slices.length - 1}
-        value={index}
-        onChange={e => setIndex(Number(e.target.value))}
-        style={{ width: "80%", marginTop: 10 }}
-      />
+      <div className="slice-controls">
+        <input
+          type="range"
+          min={0}
+          max={slices.length - 1}
+          value={index}
+          onChange={e => setIndex(Number(e.target.value))}
+          className="slice-slider"
+        />
+        
+        <div className="slice-counter">
+          {axis.toUpperCase()} срез {index + 1} / {slices.length}
+        </div>
 
-      <div style={{ color: "white" }}>
-        {axis} slice {index + 1} / {slices.length}
+        {originalSize && (
+          <div className="slice-resolution">
+            Размер: {originalSize}px
+          </div>
+        )}
+
+        {isLargeImage && (
+          <div className="slice-warning">
+            Изображение уменьшено для просмотра
+          </div>
+        )}
       </div>
     </div>
   );
