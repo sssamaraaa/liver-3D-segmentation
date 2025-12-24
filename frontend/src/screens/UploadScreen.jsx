@@ -32,13 +32,13 @@ export default function UploadScreen() {
                 const file = e.target.files[0];
                 if (file) handleFileUpload(file);
               }}
-              accept=".nii,.nii.gz"
+              accept=".nii,.nii.gz, .zip, .tar"
               disabled={isUploading}
             />
           </label>
         )}
         
-        <p className="upload-hint">Поддерживаются файлы NIfTI (.nii, .nii.gz)</p>
+        <p className="upload-hint">Поддерживаются файлы NIfTI (.nii, .nii.gz, .zip, .tar)</p>
       </div>
     </div>
   );
