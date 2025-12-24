@@ -3,6 +3,7 @@ from fastapi import APIRouter, Request, UploadFile, File
 from fastapi import HTTPException
 from backend.app.services.inference_service import run_inference
 from backend.app.services.convert_dcm import convert_dcm_to_nifti, is_dicom_folder, is_archive
+from backend.app.services.convert_orientation import convert_orientation_to_canonical
 
 
 router_predict = APIRouter()
@@ -30,6 +31,8 @@ async def predict(request: Request, file: UploadFile = File(...)):
             detail="Unsupported input format. Upload DICOM, zip/tar with DICOM, or NIfTI (.nii/.nii.gz)."
         )
 
+    to_infer = convert_orientation_to_canonical(to_infer)
+    
     model = request.app.state.model  
     model_info = request.app.state.model_info
 
