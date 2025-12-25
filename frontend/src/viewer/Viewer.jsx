@@ -6,31 +6,16 @@ export default function Viewer() {
   const { view, meshData } = useAppState();
   
   if (view === "3d") {
-    const meshUrl = meshData?.files?.mesh_stl;
-    const correctedUrl = meshUrl ? `http://localhost:8000${meshUrl.startsWith('/') ? meshUrl : `/${meshUrl}`}` : null;
-    
-    return (
-      <div style={{
-        width: '100%',
-        height: '100%',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0
-      }}>
-        <Viewer3D url={correctedUrl} />
-      </div>
-    );
+    const url = meshData?.files?.mesh_stl;
+    const fullUrl = url ? `http://localhost:8000${url.startsWith('/')?url:'/'+url}` : null;
+
+    return <Viewer3D url={fullUrl}/>;
   }
-  
-    const ctPath = meshData?.ct_path || meshData?.files?.ct;
-    const maskPath = meshData?.mask_path || meshData?.files?.mask;
 
   return (
     <SliceViewer
-      ctPath={ctPath}
-      maskPath={maskPath}
+      ctPath={meshData?.ct_path || meshData?.files?.ct}
+      maskPath={meshData?.mask_path || meshData?.files?.mask}
       axis={view}
     />
   );
