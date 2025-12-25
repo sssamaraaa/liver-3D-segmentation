@@ -1,4 +1,3 @@
-// UploadScreen.tsx
 import { useAppState } from "../app/appState";
 import { useFileUpload } from "../hooks/useFileUpload";
 import UploadIcon from '../../assets/Insert.svg'
@@ -15,19 +14,6 @@ export default function UploadScreen() {
       </div>
 
       <div className="upload-content">
-        {isUploading ? (
-          <div className="upload-progress">
-            <div className="progress-bar">
-              <div 
-                className="progress-fill" 
-                style={{ width: `${uploadProgress}%` }}
-              />
-            </div>
-            <p className="progress-text">
-              Обработка... {uploadProgress}%
-            </p>
-          </div>
-        ) : (
           <div className="upload-area">
             <div className="upload-icon-circle">
               <img 
@@ -56,7 +42,6 @@ export default function UploadScreen() {
               Поддерживаемые форматы: .nii, .nii.gz, .zip, .tar
             </p>
           </div>
-        )}
       </div>
     </div>
   );
