@@ -1,4 +1,4 @@
-import { useEffect, useState} from "react";
+import { useEffect, useState } from "react";
 import { fetchOverlay } from "/src/api/slices.js";
 
 export default function SliceViewer({ ctPath, maskPath, axis }) {
@@ -30,6 +30,18 @@ export default function SliceViewer({ ctPath, maskPath, axis }) {
     }
   }, [slices, index, originalSize]);
 
+  const handleSliderChange = (e) => {
+    setIndex(Number(e.target.value));
+  };
+
+  const handlePrev = () => {
+    setIndex(prev => Math.max(0, prev - 1));
+  };
+
+  const handleNext = () => {
+    setIndex(prev => Math.min(slices.length - 1, prev + 1));
+  };
+
   if (!slices.length) {
     return (
       <div className="slice-viewer slice-viewer--loading">
@@ -52,30 +64,62 @@ export default function SliceViewer({ ctPath, maskPath, axis }) {
       </div>
 
       <div className="slice-controls">
-        <input
-          type="range"
-          min={0}
-          max={slices.length - 1}
-          value={index}
-          onChange={e => setIndex(Number(e.target.value))}
-          className="slice-slider"
-        />
-        
-        <div className="slice-counter">
-          {axis.toUpperCase()} срез {index + 1} / {slices.length}
+        <div className="slice-navigation">
+          <button 
+            className="slice-nav-btn" 
+            onClick={handlePrev}
+            disabled={index === 0}
+          >
+            ←
+          </button>
+          
+          <div className="slice-slider-container">
+            <input
+              type="range"
+              min={0}
+              max={slices.length - 1}
+              value={index}
+              onChange={handleSliderChange}
+              className="slice-slider"
+              style={{
+                background: `linear-gradient(to right, #10B981 0%, #10B981 ${(index / (slices.length - 1)) * 100}%, #4b5563 ${(index / (slices.length - 1)) * 100}%, #4b5563 100%)`
+              }}
+            />
+            <div className="slice-slider-ticks">
+              <span>0</span>
+              <span>{Math.floor((slices.length - 1) / 2)}</span>
+              <span>{slices.length - 1}</span>
+            </div>
+          </div>
+          
+          <button 
+            className="slice-nav-btn" 
+            onClick={handleNext}
+            disabled={index === slices.length - 1}
+          >
+            →
+          </button>
         </div>
-
-        {originalSize && (
-          <div className="slice-resolution">
-            Размер: {originalSize}px
+        
+        <div className="slice-info">
+          <div className="slice-counter">
+            <span className="slice-counter-label">{axis.toUpperCase()}-срез:</span>
+            <span className="slice-counter-value">{index + 1} / {slices.length}</span>
           </div>
-        )}
 
-        {isLargeImage && (
-          <div className="slice-warning">
-            Изображение уменьшено для просмотра
-          </div>
-        )}
+          {originalSize && (
+            <div className="slice-resolution">
+              <span className="slice-resolution-label">Размер:</span>
+              <span className="slice-resolution-value">{originalSize}px</span>
+            </div>
+          )}
+
+          {isLargeImage && (
+            <div className="slice-warning">
+              Изображение уменьшено для просмотра
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
