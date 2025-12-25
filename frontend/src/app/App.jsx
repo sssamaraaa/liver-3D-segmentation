@@ -1,14 +1,14 @@
 import { AppStateProvider, useAppState } from "./appState";
 import UploadScreen from "../screens/UploadScreen";
 import ViewerScreen from "../screens/ViewerScreen";
+import ProcessingScreen from "../screens/ProcessingScreen";
 
 function AppContent() {
-  const { phase } = useAppState();
+  const { phase, progress } = useAppState();
 
   if (phase === "idle") return <UploadScreen />;
-  if (phase === "processing") {
-    return <div className="processing-screen">Обработка…</div>;
-  }
+  if (phase === "processing") return <ProcessingScreen progress={progress} />;
+
   return <ViewerScreen />;
 }
 
