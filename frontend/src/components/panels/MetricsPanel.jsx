@@ -23,7 +23,7 @@ export default function MetricsPanel({ metrics }) {
           alt=""
           className="metric-icons"
         />
-        Объём: 
+        Объём
           <div className='metric-values'>
             {metrics.volume_ml} мл
           </div>
@@ -35,7 +35,7 @@ export default function MetricsPanel({ metrics }) {
           alt=""
           className="metric-icons"
         />
-        Площадь поверхности: 
+        Площадь поверхности
           <div className='metric-values'>
             {metrics.surface_mm2} мм²
           </div>
@@ -45,7 +45,7 @@ export default function MetricsPanel({ metrics }) {
         <div className="center-of-mass-container">
           <div className="axis-labels">
             <img src={circle} alt="" className="metric-icons" />
-            Центр масс:
+            Центр масс
             <div className="axes-row">
               <span className="axis-label">X</span>
               <span className="axis-label">Y</span>
