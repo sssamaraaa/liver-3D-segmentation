@@ -1,71 +1,65 @@
 import { useState } from "react";
-import { runSegmentation } from "../api/segmentation";
 import { buildMesh } from "../api/mesh";
+import { runSegmentation } from "../api/segmentation";
+import { useAppState } from "../app/appState";
 
-export function useFileUpload(setMeshData, setPhase) {
+export function useFileUpload() {
+  const { setMeshData, setPhase, setProgress } = useAppState();
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
 
-  const handleFileUpload = async (file) => {
+  async function handleFileUpload(file) {
+    setIsUploading(true);
+    setProgress(0);
+    setPhase("processing");
+
     try {
-      setIsUploading(true);
-      setUploadProgress(0);
-      setPhase("processing");
+      // ---------- 1. ЗАГРУЗКА ФАЙЛА С ПРОГРЕССОМ ----------
+      const formData = new FormData();
+      formData.append("file", file);
 
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return 90;
+      const result = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "http://localhost:8000/segmentation/predict");
+
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 70); // 70% прогресса на upload
+            setProgress(percent);
           }
-          return prev + 10;
-        });
-      }, 300);
+        };
 
-      const seg = await runSegmentation(file);
-      setUploadProgress(50);
+        xhr.onload = () => resolve(JSON.parse(xhr.responseText));
+        xhr.onerror = reject;
 
-      const mesh = await buildMesh(seg.mask_path);
-      setUploadProgress(90);
+        xhr.send(formData);
+      });
 
-      const correctedMesh = {
-        ...mesh,
-        ct_path: seg.ct_path.replace(/\\/g, "/"),
-        mask_path: seg.mask_path.replace(/\\/g, "/"),
-        files: {
-          ...mesh.files,
-          mesh_stl: '/' + mesh.files.mesh_stl.replace(/\\/g, '/'),
-          mesh_ply: '/' + mesh.files.mesh_ply.replace(/\\/g, '/'),
-          ct: seg.ct_path.replace(/\\/g, "/"),
-          mask: seg.mask_path.replace(/\\/g, "/")
-        }
-      };
+      // ---------- 2. ОБРАБОТКА (сегментация + постпроцессинг) ----------
+      // пока нет настоящего статуса с сервера, аккуратно докручиваем полоску
+      for (let p = 70; p <= 90; p += 2) {
+        await new Promise(r => setTimeout(r, 80)); // плавно 1 сек
+        setProgress(p);
+      }
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
+      // ---------- 3. ПОСТРОЕНИЕ МЕША ----------
+      const mesh = await buildMesh(result.mask_path);
 
-      setMeshData(correctedMesh);
-      setPhase("ready");
-      
-      setTimeout(() => {
-        setIsUploading(false);
-        setUploadProgress(0);
-      }, 1000);
+      for (let p = 90; p <= 100; p += 2) {
+        await new Promise(r => setTimeout(r, 50));
+        setProgress(p);
+      }
 
-      return correctedMesh;
-    } catch (e) {
-      console.error("Error:", e);
-      alert("Ошибка обработки файла");
+      setMeshData({ ...result, ...mesh });
+      setPhase("done");
+
+    } catch (err) {
+      console.error("Upload error:", err);
       setPhase("idle");
-      setIsUploading(false);
-      setUploadProgress(0);
-      throw e;
-    }
-  };
 
-  return {
-    handleFileUpload,
-    isUploading,
-    uploadProgress
-  };
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  return { handleFileUpload, isUploading };
 }
