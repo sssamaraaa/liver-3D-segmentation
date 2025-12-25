@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { buildMesh } from "../api/mesh";
-import { runSegmentation } from "../api/segmentation";
 import { useAppState } from "../app/appState";
 
 export function useFileUpload() {
@@ -13,7 +12,7 @@ export function useFileUpload() {
     setPhase("processing");
 
     try {
-      // ---------- 1. ЗАГРУЗКА ФАЙЛА С ПРОГРЕССОМ ----------
+
       const formData = new FormData();
       formData.append("file", file);
 
@@ -23,7 +22,7 @@ export function useFileUpload() {
 
         xhr.upload.onprogress = e => {
           if (e.lengthComputable) {
-            const percent = Math.round((e.loaded / e.total) * 70); // 70% прогресса на upload
+            const percent = Math.round((e.loaded / e.total) * 70); 
             setProgress(percent);
           }
         };
@@ -34,14 +33,11 @@ export function useFileUpload() {
         xhr.send(formData);
       });
 
-      // ---------- 2. ОБРАБОТКА (сегментация + постпроцессинг) ----------
-      // пока нет настоящего статуса с сервера, аккуратно докручиваем полоску
       for (let p = 70; p <= 90; p += 2) {
-        await new Promise(r => setTimeout(r, 80)); // плавно 1 сек
+        await new Promise(r => setTimeout(r, 80)); 
         setProgress(p);
       }
 
-      // ---------- 3. ПОСТРОЕНИЕ МЕША ----------
       const mesh = await buildMesh(result.mask_path);
 
       for (let p = 90; p <= 100; p += 2) {
