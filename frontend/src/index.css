@@ -129,7 +129,7 @@ html, body {
   align-items: center;
   height: 100%;
   min-height: calc(100vh - 64px);
-  background: #262624;
+  background: #3A3A36;
 }
 
 .processing-state {
@@ -196,38 +196,6 @@ html, body {
   position: relative;
 }
 
-/* SIDEBAR-LEFT */
-.sidebar-left {
-  width: 300px;
-  background: #1A1A18;
-  border-right: 3px solid #3A3A36;
-  padding: 20px;
-  overflow-y: auto;
-  flex-shrink: 0; 
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  z-index: 10;
-}
-
-/* SIDEBAR-RIGHT */
-.viewer-screen {
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  background: #262624;
-  position: relative;
-}
-
-.viewer-screen--empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  color: #f3f4f6;
-}
 
 /* SIDEBAR-LEFT */
 .sidebar-left {
@@ -288,39 +256,43 @@ html, body {
   left: 0;
 }
 
-/* Slice viewer styles */
+/* SLICE VIEWER */
 .slice-viewer {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 20px;
   box-sizing: border-box;
   color: white;
   gap: 20px;
+  overflow: auto; 
 }
 
 .slice-container {
-  flex: 1;
+  flex: 0 0 auto; 
   display: flex;
   align-items: center;
   justify-content: center;
-  max-width: 100%;
-  max-height: calc(100% - 280px);
-  overflow: hidden;
   background: #0a0a0a;
   border-radius: 8px;
   border: 1px solid #2a2a2a;
-  padding: 10px;
+  padding: 20px;
+  max-width: 100%;
+  max-height: calc(100vh - 280px);
+  overflow: auto; 
 }
 
 .slice-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+  width: auto; 
+  height: auto; 
+  max-width: 100%; 
+  max-height: 100%; 
+  object-fit: none; 
   border-radius: 4px;
+  display: block; 
 }
 
 .slice-controls {
@@ -330,12 +302,6 @@ html, body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 15px;
-  padding: 15px 20px;
-  background: rgba(26, 26, 24, 0.9);
-  border-radius: 12px;
-  border: 3px solid #3A3A36;
-  flex-shrink: 0;
 }
 
 .slice-navigation {
