@@ -714,54 +714,66 @@ html, body {
 }
 
 /* === METRICS PANEL === */
-.metrics-panel {
-  color: #f3f4f6;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.metrics-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #27272a;
-}
-
-.metrics-icon-header {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
 .metrics-title {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
+  margin-bottom: 24px;
+  color: white;
   font-weight: 600;
-  color: #e5e7eb;
 }
 
-.metrics-empty {
-  color: #9ca3af;
-  font-style: italic;
+.metrics-main-icon {
+  margin-right: 8px;
+  width: 17px;
+  height: 17px;
 }
 
-.metric-item {
-  display: flex;
-  align-items: flex-start;
+.metric-icons {
+  margin-right: 8px;
+}
+
+.metric-titles {
+  font-size: 0.8rem;
+  color: #A8A89F;
+  margin-bottom: 8px;
+  font-weight: 400;
+  background-color: #2F2F2C;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
+.metric-values {
+  font-size: 0.9rem;
+  color: white;
+  margin-bottom: 8px;
+  font-weight: 400;
+  margin-bottom: 10px;
+  margin-top: 10px;
+}
+
+.center-of-mass-container {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 4px;
+}
+
+.axes-row, .values-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  margin-bottom: 16px;
+  text-align: center;
 }
 
-.metric-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  margin-top: 2px; /* компенсация для выравнивания с многострочным текстом */
+.axis-label {
+  font-size: 0.8rem;
+  color: #A8A89F;
+  font-weight: 500;
+  margin-bottom: 10px;
+  margin-top: 10px;
 }
 
-.metric-item b {
-  color: #10b981;
-  font-weight: 600;
+.axis-value {
+  font-size: 0.9rem;
+  color: white;
+  font-weight: 400;
+  min-width: 60px;
 }
-
