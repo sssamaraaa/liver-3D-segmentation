@@ -1,7 +1,7 @@
-import AppLayout from "../app/AppLayout";
 import { useState, useCallback } from "react";
 import { useAppState } from "../app/appState";
 import Viewer from "../viewer/Viewer";
+import AppLayout from "../app/AppLayout";
 import DropZone from "../components/DropZone";
 import { useFileUpload } from "../hooks/useFileUpload";
 import MetricsPanel from "../components/panels/MetricsPanel";
@@ -27,18 +27,22 @@ export default function ViewerScreen() {
         </div>
       ) : (
         <div className="viewer-screen">
-
           <div className="sidebar-left">
             <button onClick={() => setShowDropZone(true)}>Загрузить новый файл</button>
           </div>
 
           <div className="main-area">
-            <ViewSwitcher />
-            <Viewer />
+            <div className="view-switcher-container">
+              <ViewSwitcher />
+            </div>
+            
+            <div className="viewer-container">
+              <Viewer />
+            </div>
           </div>
 
           <div className="sidebar-right">
-            <MetricsPanel metrics={meshData?.metrics}/>
+            <MetricsPanel metrics={meshData?.metrics} />
           </div>
 
           {showDropZone && <DropZone onDrop={onDrop} onClose={() => setShowDropZone(false)} />}
