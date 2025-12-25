@@ -1,57 +1,28 @@
 import { useState, useCallback } from "react";
 import { useAppState } from "../app/appState";
-import ViewSwitcher from "../components/topbar/ViewSwitcher";
-import MetricsPanel from "../components/panels/MetricsPanel";
 import Viewer from "../viewer/Viewer";
-import { useFileUpload } from "../hooks/useFileUpload";
 import DropZone from "../components/DropZone";
+import { useFileUpload } from "../hooks/useFileUpload";
+import MetricsPanel from "../components/panels/MetricsPanel";
+import ViewSwitcher from "../components/topbar/ViewSwitcher";
 
 export default function ViewerScreen() {
-  const { meshData, setMeshData, setPhase, phase } = useAppState();
+  const { meshData} = useAppState();
+  const { handleFileUpload} = useFileUpload();
   const [showDropZone, setShowDropZone] = useState(false);
-  
-  const { handleFileUpload, isUploading } = useFileUpload(setMeshData, setPhase);
 
-  const onDrop = useCallback(async (acceptedFiles) => {
-    const file = acceptedFiles[0];
-    if (file) {
-      await handleFileUpload(file);
-      setShowDropZone(false);
-    }
-  }, [handleFileUpload]);
+  const onDrop = useCallback(files => {
+    handleFileUpload(files[0]);
+    setShowDropZone(false);
+  }, []);
 
-  if (!meshData && phase !== "processing") {
+  if (!meshData) {
     return (
       <div className="viewer-screen viewer-screen--empty">
-        <div className="empty-state">
-          <h2>Данные не загружены</h2>
-          <button 
-            className="upload-button"
-            onClick={() => setShowDropZone(true)}
-          >
-            Загрузить файл
-          </button>
-        </div>
-        
-        {showDropZone && (
-          <DropZone
-            onDrop={onDrop}
-            isUploading={isUploading}
-            onClose={() => setShowDropZone(false)}
-          />
-        )}
-      </div>
-    );
-  }
+        <h2>Данные не загружены</h2>
+        <button onClick={() => setShowDropZone(true)}>Загрузить файл</button>
 
-  if (phase === "processing" || isUploading) {
-    return (
-      <div className="viewer-screen viewer-screen--processing">
-        <div className="processing-state">
-          <h2>Обработка файла...</h2>
-          <div className="spinner"></div>
-          <p>Это может занять несколько минут</p>
-        </div>
+        {showDropZone && <DropZone onDrop={onDrop} onClose={() => setShowDropZone(false)} />}
       </div>
     );
   }
@@ -59,38 +30,19 @@ export default function ViewerScreen() {
   return (
     <div className="viewer-screen">
       <div className="sidebar-left">
-        <div className="nav-section">
-          <h3>Навигация</h3>
-          <button 
-            className="nav-button"
-            onClick={() => setShowDropZone(true)}
-          >
-            Загрузить новый файл
-          </button>
-        </div>
+        <button onClick={() => setShowDropZone(true)}>Загрузить новый файл</button>
       </div>
 
       <div className="main-area">
-        <div className="top-bar">
-          <ViewSwitcher />
-        </div>
-        
-        <div className="viewer-container">
-          <Viewer />
-        </div>
+        <ViewSwitcher />
+        <Viewer />
       </div>
 
       <div className="sidebar-right">
-        <MetricsPanel metrics={meshData?.metrics} />
+        <MetricsPanel metrics={meshData?.metrics}/>
       </div>
 
-      {showDropZone && (
-        <DropZone
-          onDrop={onDrop}
-          isUploading={isUploading}
-          onClose={() => setShowDropZone(false)}
-        />
-      )}
+      {showDropZone && <DropZone onDrop={onDrop} onClose={() => setShowDropZone(false)} />}
     </div>
   );
 }
