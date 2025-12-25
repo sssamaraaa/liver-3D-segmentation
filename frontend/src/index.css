@@ -347,33 +347,6 @@ html, body {
   max-width: 800px;
 }
 
-.slice-nav-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #10B981;
-  color: white;
-  border: none;
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  transform: translateY(10px);
-}
-
-.slice-nav-btn:hover:not(:disabled) {
-  background: #0ae4a2;
-  transform: scale(1.1);
-}
-
-.slice-nav-btn:disabled {
-  background: #10B981;
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .slice-slider-container {
   flex: 1;
   display: flex;
@@ -440,48 +413,6 @@ html, body {
   flex-wrap: wrap;
 }
 
-.slice-counter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(107, 128, 121, 0.1);
-  padding: 8px 16px;
-  border-radius: 20px;
-  border: 2px solid #3A3A36;
-  transform: translateY(-10px);
-}
-
-.slice-counter-label {
-  font-weight: 500;
-  color: #A8A89F;
-}
-
-.slice-counter-value {
-  font-weight: 500;
-  color: #A8A89F;
-}
-
-.slice-resolution {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(107, 128, 121, 0.1);
-  padding: 8px 16px;
-  border-radius: 20px;
-  border: 2px solid #3A3A36;
-  transform: translateY(-10px);
-}
-
-.slice-resolution-label {
-  font-weight: 500;
-  color: #A8A89F;
-}
-
-.slice-resolution-value {
-  font-weight: 500;
-  color: #A8A89F;
-}
-
 .slice-warning {
   background: rgba(245, 158, 11, 0.1);
   color: #fbbf24;
@@ -503,31 +434,6 @@ html, body {
   background: rgba(26, 26, 24, 0.8);
   border-radius: 12px;
   border: 1px solid #3A3A36;
-}
-
-/* SCROLLBAR */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: #18181b;
-  border-radius: 5px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #10B981;
-  border-radius: 5px;
-  border: 2px solid #18181b;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #10B981;
-}
-
-::-webkit-scrollbar-corner {
-  background: #18181b;
 }
 
 /* EXPORT PANEL */
@@ -617,7 +523,7 @@ html, body {
   border-color: #4b5563;
 }
 
-/* DropZone */
+/* DROPZONE */
 .dropzone-overlay {
   position: fixed;
   top: 0;
@@ -713,7 +619,7 @@ html, body {
   .top-left-controls { flex-wrap: wrap; }
 }
 
-/* === METRICS PANEL === */
+/* METRICS PANEL */
 .metrics-title {
   font-size: 1.1rem;
   margin-bottom: 24px;

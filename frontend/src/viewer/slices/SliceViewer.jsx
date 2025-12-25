@@ -65,14 +65,6 @@ export default function SliceViewer({ ctPath, maskPath, axis }) {
 
       <div className="slice-controls">
         <div className="slice-navigation">
-          <button 
-            className="slice-nav-btn" 
-            onClick={handlePrev}
-            disabled={index === 0}
-          >
-            ←
-          </button>
-          
           <div className="slice-slider-container">
             <input
               type="range"
@@ -91,29 +83,9 @@ export default function SliceViewer({ ctPath, maskPath, axis }) {
               <span>{slices.length - 1}</span>
             </div>
           </div>
-          
-          <button 
-            className="slice-nav-btn" 
-            onClick={handleNext}
-            disabled={index === slices.length - 1}
-          >
-            →
-          </button>
         </div>
         
         <div className="slice-info">
-          <div className="slice-counter">
-            <span className="slice-counter-label">{axis.toUpperCase()}-срез:</span>
-            <span className="slice-counter-value">{index + 1} / {slices.length}</span>
-          </div>
-
-          {originalSize && (
-            <div className="slice-resolution">
-              <span className="slice-resolution-label">Размер:</span>
-              <span className="slice-resolution-value">{originalSize}px</span>
-            </div>
-          )}
-
           {isLargeImage && (
             <div className="slice-warning">
               Изображение уменьшено для просмотра
