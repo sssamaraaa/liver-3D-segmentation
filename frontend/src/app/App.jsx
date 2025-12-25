@@ -15,9 +15,7 @@ function AppContent() {
 export default function App() {
   return (
     <AppStateProvider>
-      <div className="app-container">
         <AppContent />
-      </div>
     </AppStateProvider>
   );
 }
