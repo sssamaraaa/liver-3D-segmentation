@@ -74,8 +74,14 @@ export default function ViewerScreen() {
   return (
       <div>
         {meshData && (
-          <div className="global-upload-button">
-            <button onClick={() => setShowDropZone(true)}>Загрузить новый файл</button>
+          <div className="">
+            <div className="view-switcher-wrapper">
+              <ViewSwitcher />
+            </div>
+            
+            <div className="global-upload-button">
+              <button onClick={() => setShowDropZone(true)}>Загрузить новый файл</button>
+            </div>
           </div>
         )}
         
@@ -93,10 +99,6 @@ export default function ViewerScreen() {
               </div>
 
               <div className="main-area">
-                <div className="view-switcher-container">
-                  <ViewSwitcher />
-                </div>
-
                 <div className="viewer-container">
                   <Viewer />
                 </div>
