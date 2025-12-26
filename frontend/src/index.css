@@ -480,8 +480,8 @@ html, body {
 .export-button-mask:hover,
 .nav-button:hover,
 .top-upload-button:hover {
-  background: #374151;
-  border-color: #4b5563;
+  background: #414141;
+  border-color: #414141;
 }
 
 /* DROPZONE */
@@ -572,8 +572,9 @@ html, body {
 
 .global-upload-button button {
   background: #454545;
-  color: #B4B4B4;
+  color: #34d399;
   border: none;
+  height: 40px;
   padding: 10px 20px;
   border-radius: 10px;
   font-weight: bolder;
@@ -585,7 +586,7 @@ html, body {
 
 .global-upload-button button:hover {
   background-color: #727272;
-  color: white ;
+  color: #36ffb5;
   transform: translateY(-1px);
 }
 
@@ -609,8 +610,9 @@ html, body {
   cursor: pointer;
   font-size: 14px;
   font-weight: bolder;
+  height: 40px;
   padding: 10px 20px;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .switcher-container button:hover {
@@ -622,6 +624,13 @@ html, body {
 .switcher-container button.active {
   background-color: #727272; 
   color: white;
+}
+
+.switcher-icon {
+  width: 15px;
+  margin-right: 4px;
+  flex-shrink: 0;
+  transform: translateY(2px);
 }
 
 /* Responsive */
