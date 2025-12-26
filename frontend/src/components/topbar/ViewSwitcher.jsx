@@ -2,17 +2,25 @@ import { useAppState } from "../../app/appState";
 
 export default function ViewSwitcher() {
   const { view, setView } = useAppState();
-  const views = ["3D", "Аксиальный", "Саггитальный", "Корональный"];
+  const serverViews = ["3d", "axial", "sagittal", "coronal"];
+  
+
+  const russianLabels = {
+    "3d": "3D",
+    "axial": "Аксиальный",
+    "sagittal": "Саггитальный",
+    "coronal": "Корональный"
+  };
 
   return (
     <div className="switcher-container">
-      {views.map(v => (
+      {serverViews.map(v => (
         <button
           key={v}
-          onClick={() => setView(v)}
+          onClick={() => setView(v)} 
           className={`switcher-button ${view === v ? 'active' : ''}`}
         >
-          {v}
+          {russianLabels[v]} 
         </button>
       ))}
     </div>
