@@ -129,7 +129,7 @@ html, body {
   align-items: center;
   height: 100%;
   min-height: calc(100vh - 64px);
-  background: #3A3A36;
+  background: #262624;
 }
 
 .processing-state {
@@ -584,10 +584,9 @@ html, body {
 }
 
 .global-upload-button button:hover {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  background-color: #727272;
+  color: white ;
   transform: translateY(-1px);
-  color: white;
-  box-shadow: 0 0 4px 4px rgba(16, 185, 129, 0.3);
 }
 
 .view-switcher-wrapper {
@@ -615,20 +614,15 @@ html, body {
 }
 
 .switcher-container button:hover {
-  background-color: rgb(63 63 70);
+  background-color: #727272;
   color: white ;
   transform: translateY(-1px);
 }
 
 .switcher-container button.active {
-  background-color: rgb(5 150 105); 
+  background-color: #727272; 
   color: white;
 }
-
-.switcher-container button.active:hover {
-  background-color: rgb(4 120 87); 
-}
-
 
 /* Responsive */
 @media (max-width: 1024px) {
