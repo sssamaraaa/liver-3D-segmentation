@@ -4,7 +4,7 @@ export default function DropZone({ onDrop, isUploading, onClose }) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'application/octet-stream': ['.nii', '.nii.gz']
+      'application/octet-stream': ['.nii', '.nii.gz', '.zip', '.tar']
     },
     multiple: false,
     disabled: isUploading
@@ -29,7 +29,7 @@ export default function DropZone({ onDrop, isUploading, onClose }) {
               {isDragActive ? 'Отпустите файл здесь' : 'Перетащите файл NIfTI сюда'}
             </p>
             <p className="dropzone-subtitle">или нажмите для выбора</p>
-            <p className="dropzone-hint">Поддерживаются .nii и .nii.gz файлы</p>
+            <p className="dropzone-hint">Поддерживаются .nii, .nii.gz, .zip, .tar файлы</p>
           </div>
         )}
       </div>
