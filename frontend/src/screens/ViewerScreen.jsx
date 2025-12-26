@@ -72,38 +72,44 @@ export default function ViewerScreen() {
   }
 
   return (
-    <AppLayout>
-      {!meshData ? (
-        <div className="viewer-screen viewer-screen--empty">
-          <h2>Данные не загружены</h2>
-          <button onClick={() => setShowDropZone(true)}>Загрузить файл</button>
-          {showDropZone && <DropZone onDrop={onDrop} onClose={() => setShowDropZone(false)} />}
-        </div>
-      ) : (
-        <div className="viewer-screen">
-
-          <div className="sidebar-left">
+      <div>
+        {meshData && (
+          <div className="global-upload-button">
             <button onClick={() => setShowDropZone(true)}>Загрузить новый файл</button>
-            <ExportPanel onExport={handleExport} />  
           </div>
-
-          <div className="main-area">
-            <div className="view-switcher-container">
-              <ViewSwitcher />
+        )}
+        
+        <AppLayout>
+          {!meshData ? (
+            <div className="viewer-screen viewer-screen--empty">
+              <h2>Данные не загружены</h2>
+              <button onClick={() => setShowDropZone(true)}>Загрузить файл</button>
+              {showDropZone && <DropZone onDrop={onDrop} onClose={() => setShowDropZone(false)} />}
             </div>
+          ) : (
+            <div className="viewer-screen">
+              <div className="sidebar-left">
+                <ExportPanel onExport={handleExport} />  
+              </div>
 
-            <div className="viewer-container">
-              <Viewer />
+              <div className="main-area">
+                <div className="view-switcher-container">
+                  <ViewSwitcher />
+                </div>
+
+                <div className="viewer-container">
+                  <Viewer />
+                </div>
+              </div>
+
+              <div className="sidebar-right">
+                <MetricsPanel metrics={meshData?.metrics} />
+              </div>
+
+              {showDropZone && <DropZone onDrop={onDrop} onClose={() => setShowDropZone(false)} />}
             </div>
-          </div>
-
-          <div className="sidebar-right">
-            <MetricsPanel metrics={meshData?.metrics} />
-          </div>
-
-          {showDropZone && <DropZone onDrop={onDrop} onClose={() => setShowDropZone(false)} />}
-        </div>
-      )}
-    </AppLayout>
+          )}
+        </AppLayout>
+      </div>
   );
 }

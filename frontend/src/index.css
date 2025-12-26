@@ -143,7 +143,8 @@ html, body {
 }
 
 .processing-state h2 {
-  margin-bottom: 1.5rem;
+  font-size: 1.5rem;
+  font-weight: 600;
   color: white;
 }
 
@@ -565,6 +566,33 @@ html, body {
   opacity: 1;
   color: #f3f4f6;
   background: rgba(255, 255, 255, 0.1);
+}
+
+ /* SECOND BUTTON TO LOAD FILE */
+.global-upload-button {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
+}
+
+.global-upload-button button {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.global-upload-button button:hover {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 0 4px 4px rgba(16, 185, 129, 0.3);
 }
 
 /* Responsive */
