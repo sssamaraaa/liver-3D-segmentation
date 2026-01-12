@@ -3,15 +3,28 @@ import json
 import numpy as np
 import nibabel as nib
 from tqdm import tqdm
-from scipy.ndimage import zoom
+from nibabel.processing import resample_to_output
 from glob import glob
 
 
-def resample_to_spacing(volume, orig_spacing, new_spacing, order=1):
-    """Resample the 3D volume to a new isotropic spacing."""
-    factors = [o / n for o, n in zip(orig_spacing, new_spacing)]
-    vol_rs = zoom(volume, factors, order=order)
-    return vol_rs
+def resample_to_spacing(nifti_path, new_spacing=(1.5, 1.5, 1.5),order=1):
+    """
+    Resample NIfTI to target spacing with correct affine handling.
+    Returns: volume, spacing, affine
+    """
+    img = nib.load(nifti_path)
+
+    img_rs = resample_to_output(
+        img,
+        voxel_sizes=new_spacing,
+        order=order
+    )
+
+    vol = img_rs.get_fdata(dtype=np.float32)
+    spacing = img_rs.header.get_zooms()[:3]
+    affine = img_rs.affine
+
+    return vol, spacing, affine
 
 def intensity_clip_normalize(volume, clip_min=-200, clip_max=250):
     """Clip HU values and normalize to [0,1]."""
