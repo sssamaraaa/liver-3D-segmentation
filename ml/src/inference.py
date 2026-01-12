@@ -3,9 +3,9 @@ import numpy as np
 import nibabel as nib
 import argparse
 import time
-from scipy.ndimage import zoom
 from torch.amp import autocast
 from .data_preprocessing import resample_to_spacing, intensity_clip_normalize
+from nibabel.processing import resample_from_to
 from .model_loader import load_checkpoint, load_model
 from .model import UNet3D
 
@@ -127,19 +127,18 @@ def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.
         prob_map = prob_map / torch.clamp(count_map, min=1e-8)
         return prob_map.numpy()
 
-def postprocess_mask_to_orig(mask_pred, orig_spacing, new_spacing, orig_shape):
-    factors = [n / o for o, n in zip(orig_spacing, new_spacing)]
-    mask_rs = zoom(mask_pred.astype(np.uint8), factors, order=0)
-    
-    if mask_rs.shape != tuple(orig_shape):
-        padded = np.zeros(orig_shape, dtype=np.uint8)
-        min_z = min(mask_rs.shape[0], orig_shape[0])
-        min_y = min(mask_rs.shape[1], orig_shape[1])
-        min_x = min(mask_rs.shape[2], orig_shape[2])
-        padded[:min_z, :min_y, :min_x] = mask_rs[:min_z, :min_y, :min_x]
-        mask_rs = padded
-        
-    return mask_rs.astype(np.uint8)
+def resample_mask_to_original(mask_rs, rs_affine, orig_shape, orig_affine):
+    mask_img = nib.Nifti1Image(mask_rs.astype(np.uint8), rs_affine)
+
+    target = (orig_shape, orig_affine)
+
+    mask_orig_img = resample_from_to(
+        mask_img,
+        target,
+        order=0  # nearest for masks
+    )
+
+    return mask_orig_img.get_fdata().astype(np.uint8)
 
 def save_mask_nifti(mask, affine, out_path):
     nii = nib.Nifti1Image(mask.astype(np.uint8), affine)
@@ -242,7 +241,7 @@ def main():
     mask_new_spacing = (prob >= 0.5).astype(np.uint8)
 
     print("Postprocessing mask back to original space...")
-    mask_orig = postprocess_mask_to_orig(mask_new_spacing, orig_spacing, new_spacing, orig_shape)
+    mask_orig = resample_mask_to_original(mask_new_spacing, orig_spacing, new_spacing, orig_shape)
     print(f"Postprocessing completed in {time.time() - postprocess_start:.2f}s")
 
     # saving results
@@ -279,10 +278,14 @@ def inference(nifti_path, model, device, save_path, new_spacing=[1.5, 1.5, 1.5],
             device = "cpu"
 
     # load nifti and preprocess 
-    vol, orig_spacing, affine = load_nifti_with_meta(nifti_path)
-    orig_shape = vol.shape
+    vol_rs, rs_spacing, rs_affine = resample_to_spacing(
+    nifti_path,
+    new_spacing=new_spacing,
+    order=1
+    )
 
-    vol_rs = resample_to_spacing(vol, orig_spacing, new_spacing, order=1)
+    orig_vol, orig_spacing, orig_affine = load_nifti_with_meta(nifti_path)
+    orig_shape = orig_vol.shape
     vol_rs = intensity_clip_normalize(vol_rs, clip_min=float(clip[0]), clip_max=float(clip[1]))
 
     # run sliding-window inference 
@@ -297,11 +300,16 @@ def inference(nifti_path, model, device, save_path, new_spacing=[1.5, 1.5, 1.5],
 
     # threshold and postproccess
     mask_new_spacing = (prob >= threshold).astype(np.uint8)
-    mask_orig = postprocess_mask_to_orig(mask_new_spacing, orig_spacing, new_spacing, orig_shape)
+    mask_orig = resample_mask_to_original(
+        mask_new_spacing,
+        rs_affine,
+        orig_shape,
+        orig_affine
+    )
 
     # if needed
     if save_path:
-        save_mask_nifti(mask_orig, affine, save_path)
+        save_mask_nifti(mask_orig, orig_affine, save_path)
 
     # if we have temporarily uploaded the model
     if temp_model_loaded:
