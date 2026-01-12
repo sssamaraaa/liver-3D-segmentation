@@ -3,6 +3,7 @@ import tempfile
 import shutil
 import zipfile
 import tarfile
+import pydicom
 from dicom2nifti import convert_dicom
 from pathlib import Path
 
@@ -13,6 +14,20 @@ def is_archive(path):
 def is_dicom_folder(path):
     files = os.listdir(path)
     return any(f.lower().endswith(".dcm") for f in files) or len(files) > 1
+
+def contains_dicom(path, max_checks=10):
+    checked = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            if checked >= max_checks:
+                return True
+            fp = os.path.join(root, f)
+            try:
+                pydicom.dcmread(fp, stop_before_pixels=True)
+                return True
+            except Exception:
+                checked += 1
+    return False
 
 def convert_dcm_to_nifti(inpt):
     input_path = Path(inpt)
@@ -41,6 +56,12 @@ def convert_dcm_to_nifti(inpt):
     # path for result 
     output_path = os.path.join(tmp_dir, "converted.nii.gz")
 
+    if not contains_dicom(dcm_dir):
+        raise ValueError(
+            "Input does not contain DICOM files. "
+            "Archive may be empty or contain unsupported data."
+        )
+    
     # convert
     try:
         convert_dicom.dicom_series_to_nifti(
