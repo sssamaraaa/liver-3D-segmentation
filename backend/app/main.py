@@ -9,7 +9,10 @@ from backend.app.api.mesh import router_mesh
 from backend.app.api.get_slices import router_slices
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 
+
+load_dotenv()
 
 app = FastAPI(
     title="Liver Segmentation Service",
@@ -21,18 +24,23 @@ app.mount("/storage", StaticFiles(directory="storage"), name="storage")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",      # Vite dev server
-        "http://localhost",           # Nginx
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1",
+        "http://localhost:5173"      # Vite dev server
     ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["POST"],
+    allow_headers=["Content-Type"],
 )
 
-STORAGE_DIR = "storage"
-TTL_SECONDS = 3000  # 1 час
+STORAGE_DIR = os.getenv("STORAGE_DIR")
+EXISTENCE_SECONDS = os.getenv("EXISTENCE_SECONDS")
+MODEL_PATH = os.getenv("MODEL_PATH")
+
+if not all([STORAGE_DIR, MODEL_PATH]):
+    missing = []
+    if not STORAGE_DIR: missing.append("STORAGE_DIR")
+    if not MODEL_PATH: missing.append("MODEL_PATH")
+    if not EXISTENCE_SECONDS: missing.append("EXISTENCE_SECONDS")
+    raise ValueError(f"Missing required environment variables: {missing}")
 
 def cleanup_storage():
     while True:
@@ -41,7 +49,7 @@ def cleanup_storage():
             fpath = os.path.join(STORAGE_DIR, fname)
             if os.path.isfile(fpath):
                 mtime = datetime.fromtimestamp(os.path.getmtime(fpath))
-                if now - mtime > timedelta(seconds=TTL_SECONDS):
+                if now - mtime > timedelta(seconds=EXISTENCE_SECONDS):
                     try:
                         os.remove(fpath)
                         print(f"Deleted {fpath}")
@@ -51,9 +59,7 @@ def cleanup_storage():
 
 Thread(target=cleanup_storage, daemon=True).start()
 
-
-MODEL_CKPT = "ml\\src\\results_ft\\run2\\Unet3D_dice97(after_ft).pth"
-model, model_info = load_model(MODEL_CKPT, device="cuda", base_filters=16, use_fp16_on_gpu=True)
+model, model_info = load_model(MODEL_PATH, device="cuda", base_filters=16, use_fp16_on_gpu=True)
 
 app.state.model = model
 app.state.model_info = model_info
