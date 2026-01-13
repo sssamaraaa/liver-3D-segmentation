@@ -21,7 +21,8 @@ storage
 
 tests/
 
-nginx/conf
+nginx/conf/*
+!nginx/conf/nginx.conf
 nginx/contrib/
 nginx/docs
 nginx/html
