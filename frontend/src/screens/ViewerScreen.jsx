@@ -39,8 +39,7 @@ export default function ViewerScreen() {
 
     let fullUrl = filePath;
     if (!filePath.startsWith("http")) {
-      const baseUrl = "http://localhost:8000";
-      fullUrl = `${baseUrl}${filePath.startsWith("/") ? filePath : "/" + filePath}`;
+      fullUrl = filePath.startsWith('/') ? filePath.replace(/\\/g,'/') : '/' + filePath.replace(/\\/g,'/');
     }
 
     fetch(fullUrl)

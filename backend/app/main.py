@@ -7,7 +7,6 @@ from ml.src.model_loader import load_model
 from backend.app.api.predict import router_predict
 from backend.app.api.mesh import router_mesh
 from backend.app.api.get_slices import router_slices
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
@@ -20,16 +19,6 @@ app = FastAPI(
 )
 
 app.mount("/storage", StaticFiles(directory="storage"), name="storage")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173"      # Vite dev server
-    ],
-    allow_credentials=False,
-    allow_methods=["POST"],
-    allow_headers=["Content-Type"],
-)
 
 STORAGE_DIR = os.getenv("STORAGE_DIR")
 EXISTENCE_SECONDS = os.getenv("EXISTENCE_SECONDS")

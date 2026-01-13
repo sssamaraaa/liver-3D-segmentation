@@ -7,7 +7,7 @@ export default function Viewer() {
   
   if (view === "3d") {
     const url = meshData?.files?.mesh_stl;
-    const fullUrl = url ? `http://localhost:8000${url.startsWith('/')?url:'/'+url}` : null;
+    const fullUrl = url.startsWith('/') ? url : '/' + url;
 
     return <Viewer3D url={fullUrl}/>;
   }

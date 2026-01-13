@@ -18,7 +18,7 @@ export function useFileUpload() {
 
       const result = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", "http://localhost:8000/segmentation/predict");
+        xhr.open("POST", "/segmentation/predict");
 
         xhr.upload.onprogress = e => {
           if (e.lengthComputable) {

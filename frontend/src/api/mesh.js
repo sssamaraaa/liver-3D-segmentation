@@ -1,7 +1,7 @@
 export async function buildMesh(maskPath) {
   console.log('Building mesh for:', maskPath);
   
-  const res = await fetch("http://localhost:8000/mesh/build", {
+  const res = await fetch("/mesh/build", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
