@@ -23,6 +23,7 @@ tests/
 
 nginx/conf/*
 !nginx/conf/nginx.conf
+!nginx/conf/nginx.docker.conf
 nginx/contrib/
 nginx/docs
 nginx/html
