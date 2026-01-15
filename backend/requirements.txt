@@ -1,0 +1,14 @@
+dicom2nifti==2.6.2
+fastapi==0.128.0
+matplotlib==3.10.8
+nibabel==5.3.3
+numpy==2.0.2
+opencv_python==4.12.0.88
+pydantic==2.12.5
+pydicom==3.0.1
+python-dotenv==1.2.1
+pyvista==0.46.4
+scipy==1.14.0
+scikit-image==0.25.2
+trimesh==4.10.1
+python-multipart==0.0.6

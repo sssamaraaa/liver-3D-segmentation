@@ -1,0 +1,31 @@
+services:
+  ml:
+    build: ./ml
+    container_name: ml
+    ports:
+      - "9000:8000"
+
+  backend:
+    build: ./backend
+    container_name: backend
+    depends_on:
+      - ml
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/proj/backend/storage
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/conf/nginx.docker.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - frontend
+      - backend
