@@ -1,0 +1,18 @@
+FROM python:3.10-slim
+
+WORKDIR /ml
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/api.py ./src/
+COPY src/inference.py ./src/
+COPY src/model.py ./src/
+COPY src/model_loader.py ./src/
+COPY src/data_preprocessing.py ./src/
+COPY model ./model
+
+ENV PYTHONPATH=/ml
+
+EXPOSE 8000
+CMD ["python", "-m", "src.api"]
