@@ -2,14 +2,14 @@ import os
 import time
 from datetime import datetime, timedelta
 from threading import Thread
+
 from fastapi import FastAPI
-from ml.src.model_loader import load_model
-from backend.app.api.predict import router_predict
-from backend.app.api.mesh import router_mesh
-from backend.app.api.get_slices import router_slices
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
+from backend.app.api.predict import router_predict
+from backend.app.api.mesh import router_mesh
+from backend.app.api.get_slices import router_slices
 
 load_dotenv()
 
@@ -18,18 +18,19 @@ app = FastAPI(
     version="0.1"
 )
 
-app.mount("/storage", StaticFiles(directory="storage"), name="storage")
-
 STORAGE_DIR = os.getenv("STORAGE_DIR")
 EXISTENCE_SECONDS = os.getenv("EXISTENCE_SECONDS")
-MODEL_PATH = os.getenv("MODEL_PATH")
 
-if not all([STORAGE_DIR, MODEL_PATH]):
+if not all([STORAGE_DIR, EXISTENCE_SECONDS]):
     missing = []
-    if not STORAGE_DIR: missing.append("STORAGE_DIR")
-    if not MODEL_PATH: missing.append("MODEL_PATH")
-    if not EXISTENCE_SECONDS: missing.append("EXISTENCE_SECONDS")
+    if not STORAGE_DIR:
+        missing.append("STORAGE_DIR")
+    if not EXISTENCE_SECONDS:
+        missing.append("EXISTENCE_SECONDS")
     raise ValueError(f"Missing required environment variables: {missing}")
+
+app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")
+
 
 def cleanup_storage():
     while True:
@@ -38,7 +39,7 @@ def cleanup_storage():
             fpath = os.path.join(STORAGE_DIR, fname)
             if os.path.isfile(fpath):
                 mtime = datetime.fromtimestamp(os.path.getmtime(fpath))
-                if now - mtime > timedelta(seconds=EXISTENCE_SECONDS):
+                if now - mtime > timedelta(seconds=int(EXISTENCE_SECONDS)):
                     try:
                         os.remove(fpath)
                         print(f"Deleted {fpath}")
@@ -46,13 +47,9 @@ def cleanup_storage():
                         print(f"Error deleting {fpath}: {e}")
         time.sleep(60)
 
+
 Thread(target=cleanup_storage, daemon=True).start()
 
-model, model_info = load_model(MODEL_PATH, device="cuda", base_filters=16, use_fp16_on_gpu=True)
-
-app.state.model = model
-app.state.model_info = model_info
 app.include_router(router_predict, prefix="/segmentation")
 app.include_router(router_mesh, prefix="/mesh")
 app.include_router(router_slices, prefix="/slices")
-

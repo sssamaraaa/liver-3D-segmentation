@@ -1,25 +1,23 @@
-from ml.src.inference import inference
+import requests
 import os
-from datetime import datetime
 
+ML_URL = "http://ml:8000/infer"
 
-def run_inference(nifti_path, model, device, output_dir):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    mask_filename = f"mask_{timestamp}.nii.gz"
-    mask_path = os.path.join(output_dir, mask_filename)
+def run_inference(nifti_path, output_dir):
+    with open(nifti_path, "rb") as f:
+        response = requests.post(
+            ML_URL,
+            files={"file": f}
+        )
 
-    _ = inference(
-        nifti_path,
-        model=model,
-        device=device,
-        save_path=mask_path
-    )
+    if response.status_code != 200:
+        raise RuntimeError(response.text)
 
-    abs_mask_path = os.path.abspath(mask_path)
-    
+    result = response.json()
+
     return {
         "ct_path": os.path.abspath(nifti_path),
-        "mask_path": abs_mask_path,
-        "filename": mask_filename,
+        "mask_path": result["mask_path"],
+        "filename": os.path.basename(result["mask_path"]),
         "status": "success"
     }
