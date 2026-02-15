@@ -2,33 +2,16 @@ import torch
 import torch.nn as nn
 
 
-def dice_coef(pred, target, eps=1e-6, ignore_empty=True):
-    """Dice, excluding completely empty targets (gt.sum()==0)"""
-    pred = pred.contiguous().view(pred.shape[0], -1)
-    target = target.contiguous().view(target.shape[0], -1)
-
-    if ignore_empty:
-        valid_mask = target.sum(dim=1) > 0
-        if valid_mask.any():
-            pred = pred[valid_mask]
-            target = target[valid_mask]
-        else:
-            return torch.tensor(1.0, device=pred.device)
-
-    inter = (pred * target).sum(-1)
-    denom = pred.sum(-1) + target.sum(-1)
-    dice = (2 * inter) / (denom + eps)
-    return dice.mean()
-
 class ConvBlock(nn.Module):
-    def __init__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch, negative_slope=0.01):
         super().__init__()
+        # Conv -> Norm -> Activation
         self.conv1 = nn.Conv3d(in_ch, out_ch, kernel_size=3, padding=1, bias=False)
         self.norm1 = nn.InstanceNorm3d(out_ch)
-        self.act1 = nn.LeakyReLU(0.01, inplace=True)
+        self.act1 = nn.LeakyReLU(negative_slope, inplace=True)
         self.conv2 = nn.Conv3d(out_ch, out_ch, kernel_size=3, padding=1, bias=False)
         self.norm2 = nn.InstanceNorm3d(out_ch)
-        self.act2 = nn.LeakyReLU(0.01, inplace=True)
+        self.act2 = nn.LeakyReLU(negative_slope, inplace=True)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -66,8 +49,8 @@ class UNet3D(nn.Module):
         x3 = self.down2(x2)    
         x4 = self.down3(x3)     
         x5 = self.down4(x4)     
-        u3 = self.up3(x5)
-        u3 = torch.cat([u3, x4], dim=1)
+        u3 = self.up3(x5) 
+        u3 = torch.cat([u3, x4], dim=1) 
         u3 = self.conv_up3(u3)
         u2 = self.up2(u3)
         u2 = torch.cat([u2, x3], dim=1)
@@ -81,16 +64,32 @@ class UNet3D(nn.Module):
         out = self.outc(u0)
         return out
 
+def dice_coef(pred, target, eps=1e-6, ignore_empty=True):
+    """Dice, excluding completely empty targets (gt.sum()==0)"""
+    pred = pred.contiguous().view(pred.shape[0], -1) 
+    target = target.contiguous().view(target.shape[0], -1)
+
+    if ignore_empty:
+        valid_mask = target.sum(dim=1) > 0 
+        if valid_mask.any():
+            pred = pred[valid_mask] 
+            target = target[valid_mask]
+        else:
+            return torch.tensor(1.0, device=pred.device) 
+
+    intersection = (pred * target).sum(-1) 
+    denomination = pred.sum(-1) + target.sum(-1) 
+    dice = (2 * intersection) / (denomination + eps) 
+    return dice.mean()
+
 class DiceBCELoss(nn.Module):
     def __init__(self, weight_bce=0.5):
         super().__init__()
         self.bce = nn.BCEWithLogitsLoss()
-        self.weight_bce = weight_bce
+        self.weight_bce = weight_bce 
 
     def forward(self, logits, targets):
-        bce = self.bce(logits, targets)
-        probs = torch.sigmoid(logits)
+        bce = self.bce(logits, targets) 
+        probs = torch.sigmoid(logits) 
         dice = dice_coef(probs, targets)
-        return self.weight_bce * bce + (1 - self.weight_bce) * (1 - dice)
-
-
+        return self.weight_bce * bce + (1 - self.weight_bce) * (1 - dice) 
