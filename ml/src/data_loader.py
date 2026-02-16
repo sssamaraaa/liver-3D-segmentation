@@ -122,3 +122,15 @@ class LiverPatchDataset(Dataset):
         patch_mask = np.expand_dims((patch_mask > 0).astype(np.float32), 0)
 
         return patch_img, patch_mask
+    
+def split_dataset(image_paths, mask_paths, val_frac=0.15):
+    indices = np.arange(len(image_paths))
+    np.random.shuffle(indices)
+    val_count = max(1, int(len(indices) * val_frac))
+    val_idx = indices[:val_count]
+    train_idx = indices[val_count:]
+    train_images = [image_paths[i] for i in train_idx]
+    train_masks = [mask_paths[i] for i in train_idx]
+    val_images = [image_paths[i] for i in val_idx]
+    val_masks = [mask_paths[i] for i in val_idx]
+    return train_images, train_masks, val_images, val_masks
