@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 
+# works on tensors for loss
 def dice_coef(pred, target, eps=1e-6, ignore_empty=True):
     """Dice, excluding completely empty targets (gt.sum()==0)"""
     pred = pred.contiguous().view(pred.shape[0], -1) 
@@ -32,6 +33,7 @@ class DiceBCELoss(nn.Module):
         dice = dice_coef(probs, targets)
         return self.weight_bce * bce + (1 - self.weight_bce) * (1 - dice) 
     
+# works on counts
 def dice(inter, p_sum, g_sum, eps=1e-6):
     denom = p_sum + g_sum + eps
     return 2.0 * inter / denom
@@ -45,6 +47,3 @@ def precision(inter, p_sum, eps=1e-6):
 
 def recall(inter, g_sum, eps=1e-6):
     return inter / (g_sum + eps)
-
-def f1_score(prec, rec, eps=1e-6):
-    return 2 * prec * rec / (prec + rec + eps)
