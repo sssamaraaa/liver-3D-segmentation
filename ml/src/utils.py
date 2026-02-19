@@ -53,6 +53,13 @@ def load_checkpoint(ckpt_path, model, optimizer=None, scheduler=None, device="cp
 def save_metrics_plots(all_epoch_stats, out_dir):
     os.makedirs(out_dir, exist_ok=True)
 
+    conf = {
+        'figsize': (10, 6),
+        'linestyle': ':',
+        'alpha': 0.6, 
+        'dpi': 200
+        }
+
     metrics = ['dice', 'iou', 'precision', 'recall', 'train_loss']
     mean_history = {m: [] for m in metrics}
     epochs = []
@@ -60,44 +67,41 @@ def save_metrics_plots(all_epoch_stats, out_dir):
     def calc_mean(values):
         if len(values) > 0:
             return np.mean(values)
-        return np.nan
 
-    for epoch_stat in all_epoch_stats:
-        epochs.append(epoch_stat['epoch'])
-        mean_history['train_loss'].append(calc_mean(epoch_stat['losses']))
-        mean_history['dice'].append(calc_mean(epoch_stat.get('dices', [])))
-        mean_history['iou'].append(calc_mean(epoch_stat.get('ious', [])))
-        mean_history['precision'].append(calc_mean(epoch_stat.get('precisions', [])))
-        mean_history['recall'].append(calc_mean(epoch_stat.get('recalls', [])))
+    for stat in all_epoch_stats:
+        epochs.append(stat['epoch'])
+        mean_history['dice'].append(calc_mean(stat.get('dices', [])))
+        mean_history['iou'].append(calc_mean(stat.get('ious', [])))
+        mean_history['precision'].append(calc_mean(stat.get('precisions', [])))
+        mean_history['recall'].append(calc_mean(stat.get('recalls', [])))
+        mean_history['train_loss'].append(calc_mean(stat['losses']))
 
-    # line plots
-    plt.figure(figsize=(10,6))
-    plt.plot(epochs, mean_history['train_loss'], marker='o', label='Train loss')
+    plt.figure(figsize=conf['figsize'])
+    plt.plot(epochs, mean_history['train_loss'], marker='.', color='r', label='Train loss')
+
     if not all(np.isnan(mean_history['dice'])):
-        plt.plot(epochs, mean_history['dice'], marker='x', label='Val mean Dice')
+        plt.plot(epochs, mean_history['dice'], marker='*', color='b', label='mean Dice')
+
     plt.xlabel('Epoch')
     plt.ylabel('Value')
-    plt.grid(True, linestyle=':', alpha=0.6)
-    plt.title('Train loss & Val mean Dice per epoch')
+    plt.grid(True, linestyle=conf['linestyle'], alpha=conf['alpha'])
+    plt.title('Train loss & mean Dice per epoch')
     plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(out_dir, 'metrics_epoch_line.png'), dpi=150)
+    plt.savefig(os.path.join(out_dir, 'main_metrics.png'), dpi=conf['dpi'])
     plt.close()
 
-    # boxplots per epoch for key metrics
-    for metric_key, label in [('dices','Dice'), ('ious','IoU')]:
-        fig, ax = plt.subplots(figsize=(12,6))
-        data = [epoch_stat.get(metric_key, []) for epoch_stat in all_epoch_stats]
-        data = [np.array(d, dtype=float) if len(d)>0 else np.array([np.nan]) for d in data]
-        ax.boxplot(data, tick_labels=[f"E{e}" for e in epochs], showfliers=False)
-        ax.set_title(f'{label} distribution per epoch (boxplot)')
-        ax.set_xlabel('Epoch'); ax.set_ylabel(label)
-        plt.xticks(rotation=45)
+    for metric, label in [('dices', 'Dice'), ('ious', 'IoU')]:
+        fig, ax = plt.subplots(figsize=conf['figsize'])
+        data = [stat.get(metric, []) for stat in all_epoch_stats] # stat - values for 1 epoch
+        ax.boxplot(data, tick_labels=[e for e in epochs], showfliers=True)
+        ax.set_title(f'{label} distribution per epoch')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel(label)
         plt.tight_layout()
-        plt.savefig(os.path.join(out_dir, f'{metric_key}_boxplot.png'), dpi=150)
+        plt.savefig(os.path.join(out_dir, f'{metric}_boxplot.png'), dpi=conf['dpi'])
         plt.close()
 
-    # json
     summary = []
     for epoch_stat in all_epoch_stats:
         row = {
@@ -113,7 +117,7 @@ def save_metrics_plots(all_epoch_stats, out_dir):
         }
         summary.append(row)
 
-    with open(os.path.join(out_dir, 'metrics_summary.json'), 'w') as f:
-        json.dump(summary, f, indent=2)
+    with open(os.path.join(out_dir, 'metrics_per_epoch.json'), 'w') as file:
+        json.dump(summary, file, indent=2)
 
     logging.info(f"[metrics] Saved plots and summaries to {out_dir}")
