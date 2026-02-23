@@ -44,7 +44,7 @@ def augment_ct3d(img, mask):
 
     # 4. Elastic deformation (small)
     if random.random() < 0.15:
-        alpha = random.uniform(20, 40) # displacement amplitude (30-60mm)
+        alpha = random.uniform(20, 40) # displacement amplitude (30-60mm) (need to try 10-30)
         sigma = random.uniform(3, 6) # smoothing
         shape = img.shape
         dx = gaussian_filter((np.random.rand(*shape) * 2 - 1), sigma) * alpha # offset for the new grid (convolution with a Gaussian kernel)
@@ -68,7 +68,7 @@ class LiverPatchDataset(Dataset):
         self.pos_ratio = pos_ratio
         self.transform = transform
 
-        assert len(images_paths) == len(masks_paths), "Images and masks length dismatch!"
+        assert len(images_paths) == len(masks_paths), "Images and masks count mismatch!"
 
     def __len__(self):
         return len(self.images_paths) * self.patches_per_volume
