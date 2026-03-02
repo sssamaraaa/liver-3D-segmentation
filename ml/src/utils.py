@@ -5,6 +5,7 @@ import random
 import numpy as np
 import json
 import matplotlib.pyplot as plt
+from .model import UNet3D
 
 
 def seed_everything(seed=42):
@@ -26,6 +27,11 @@ def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag
     torch.save({
         "epoch": epoch,
         "model_state": model.state_dict(),
+        "model_config": {
+            "in_ch": args.in_ch,
+            "out_ch": args.out_ch,
+            "base_filters": args.base_filters,
+        },
         "optimizer_state": optimizer.state_dict(),
         "scheduler_state": scheduler.state_dict() if scheduler is not None else None,
         "best_val_dice": best_val_dice,
@@ -49,6 +55,23 @@ def load_checkpoint(ckpt_path, model, optimizer=None, scheduler=None, device="cp
     best_val_dice = checkpoint.get("best_val_dice", 0.0)
     
     return epoch, best_val_dice, checkpoint.get("args", {})
+
+def load_model_from_checkpoint(ckpt_path, device):
+    checkpoint = torch.load(ckpt_path, map_location=device)
+
+    args = checkpoint["args"]
+
+    model = UNet3D(
+        in_ch=args["in_ch"],
+        out_ch=args["out_ch"],
+        base_filters=args["base_filters"]
+    )
+
+    model.load_state_dict(checkpoint["model_state"])
+    model.to(device)
+    model.eval()
+
+    return model
 
 def save_metrics_plots(all_epoch_stats, out_dir):
     os.makedirs(out_dir, exist_ok=True)
