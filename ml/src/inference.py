@@ -1,21 +1,11 @@
 import torch
 import numpy as np
 import nibabel as nib
-import argparse
 import time
 from torch.amp import autocast
-from .data_preprocessing import resample_to_spacing, intensity_clip_normalize
-from nibabel.processing import resample_from_to
-from .model_loader import load_checkpoint, load_model
-from .model import UNet3D
+from .data_preprocessing import resample_to_isotropic, resample_mask_to_original, intensity_clip_normalize, save_mask_nifti
+from .utils import load_model_from_checkpoint
 
-
-def load_nifti_with_meta(path):
-    nii = nib.load(path)
-    vol = np.asarray(nii.dataobj, dtype=np.float32)
-    spacing = nii.header.get_zooms()  
-    affine = nii.affine
-    return vol, tuple(spacing), affine
 
 def get_start_points(max_size, patch_size, stride):
     if max_size <= patch_size:
@@ -33,8 +23,6 @@ def get_start_points(max_size, patch_size, stride):
     return sorted(set(starts))
 
 def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.5, batch_size=4):
-    model.eval()
-    
     # OP 1: use torch.inference_mode() for faster inference with less overhead
     with torch.inference_mode():
         z_max, y_max, x_max = volume.shape
@@ -48,9 +36,6 @@ def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.
         z_starts = get_start_points(z_max, dz, sz)
         y_starts = get_start_points(y_max, dy, sy)  
         x_starts = get_start_points(x_max, dx, sx)
-
-        print(f"Processing {len(z_starts)}x{len(y_starts)}x{len(x_starts)} = {len(z_starts)*len(y_starts)*len(x_starts)} patches")
-        print(f"Stride: z={sz}, y={sy}, x={sx}")
 
         # OP 3: pre-allocate batch tensor on GPU once to avoid repeated allocations
         use_fp16 = device.type == 'cuda'
@@ -121,171 +106,27 @@ def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.
                         coords_list = []
 
         process_batch(batch_count, coords_list)
-
-        print(f"Processed {total_patches} patches total")
         
         prob_map = prob_map / torch.clamp(count_map, min=1e-8)
         return prob_map.numpy()
 
-def resample_mask_to_original(mask_rs, rs_affine, orig_shape, orig_affine):
-    mask_img = nib.Nifti1Image(mask_rs.astype(np.uint8), rs_affine)
-
-    target = (orig_shape, orig_affine)
-
-    mask_orig_img = resample_from_to(
-        mask_img,
-        target,
-        order=0  # nearest for masks
-    )
-
-    return mask_orig_img.get_fdata().astype(np.uint8)
-
-def save_mask_nifti(mask, affine, out_path):
-    nii = nib.Nifti1Image(mask.astype(np.uint8), affine)
-    nib.save(nii, out_path)
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--model", required=True, help="Path to model checkpoint (.pth)")
-    p.add_argument("--input", required=True, help="Path to input NIfTI (.nii/.nii.gz) or DICOM folder")
-    p.add_argument("--output", required=True, help="Path to save output mask (.nii.gz)")
-    p.add_argument("--device", default="cuda", help="cuda or cpu")
-    p.add_argument("--new_spacing", nargs=3, type=float, default=[1.5, 1.5, 1.5], help="target spacing used for model (z y x)")
-    p.add_argument("--patch_size", nargs=3, type=int, default=[80, 160, 160], help="patch size (z y x) used for inference")
-    p.add_argument("--stride_factor", type=float, default=0.5, help="stride factor for sliding window (увеличено для скорости)")
-    p.add_argument("--batch_size", type=int, default=4, help="batch size for sliding window inference (увеличено для скорости)")
-    p.add_argument("--base_filters", type=int, default=16, help="base filters for UNet3D architecture")
-    p.add_argument("--clip", nargs=2, type=float, default=[-200, 250], help="HU clip min and max")
-    p.add_argument("--fast_mode", action="store_true", help="Включить агрессивные оптимизации для скорости")
-    args = p.parse_args()
-
-    total_start = time.time()
-    
-    if args.device == "cuda" and not torch.cuda.is_available():
-        print("CUDA not available, using CPU")
-        device = torch.device("cpu")
-    else:
-        device = torch.device(args.device)
-    
-    print(f"Using device: {device}")
-
-    # OP 9: enable CUDA optimizations for faster computation
-    if device.type == 'cuda':
-        torch.backends.cudnn.benchmark = True  # optimization for convolution
-        torch.backends.cuda.matmul.allow_tf32 = True  # fast matmul
-        torch.backends.cudnn.allow_tf32 = True
-        print("CUDA optimizations enabled")
-
-    new_spacing = tuple(args.new_spacing)
-    patch_size = tuple(args.patch_size)
-
-    # OP 10: fast mode configuration for maximum speed
-    if args.fast_mode:
-        args.stride_factor = 0.5  
-        if device.type == 'cuda':
-            args.batch_size = 8   
-        print("Fast mode enabled")
-
-    # data loading
-    load_start = time.time()
-    input_path = args.input
-
-    print("Loading NIfTI...")
-    vol, orig_spacing, affine = load_nifti_with_meta(input_path)
-    orig_shape = vol.shape
-    is_nifti = True
-
-    print(f"Original data loaded in {time.time() - load_start:.2f}s")
-    print(f"Original shape: {orig_shape}, orig_spacing: {orig_spacing}")
-
-    # prerprocessing
-    preprocess_start = time.time()
-    print(f"Resampling to model spacing: {new_spacing}")
-    vol_rs = resample_to_spacing(vol, orig_spacing, new_spacing, order=1)
-    vol_rs = intensity_clip_normalize(vol_rs, clip_min=float(args.clip[0]), clip_max=float(args.clip[1]))
-    print(f"Preprocessing completed in {time.time() - preprocess_start:.2f}s")
-    print(f"Resampled shape: {vol_rs.shape}")
-
-    # model loading
-    model_start = time.time()
-    print("Building model and loading checkpoint (fast)...")
-    model = UNet3D(in_ch=1, out_ch=1, base_filters=args.base_filters)
-    model = load_checkpoint(model, args.model, device)
-    model.to(device)
-    
-    # OP 11: use half precision (FP16) for the entire model on GPU
-    if device.type == 'cuda':
-        model = model.half()
-        print("Using FP16 precision")
-    
-    model.eval()
-    print(f"Model loaded in {time.time() - model_start:.2f}s")
-
-    # inference
-    inference_start = time.time()
-    print("Running optimized sliding-window inference...")
-    print(f"Batch size: {args.batch_size}, Stride factor: {args.stride_factor}")
-    
-    prob = sliding_window_inference(
-        vol_rs, model, device, 
-        patch_size=patch_size, 
-        stride_factor=args.stride_factor, 
-        batch_size=args.batch_size
-    )
-    
-    inference_time = time.time() - inference_start
-    print(f"Inference completed in {inference_time:.2f}s")
-
-    # postprocessing
-    postprocess_start = time.time()
-    mask_new_spacing = (prob >= 0.5).astype(np.uint8)
-
-    print("Postprocessing mask back to original space...")
-    mask_orig = resample_mask_to_original(mask_new_spacing, orig_spacing, new_spacing, orig_shape)
-    print(f"Postprocessing completed in {time.time() - postprocess_start:.2f}s")
-
-    # saving results
-    save_start = time.time()
-    out_path = args.output
-    print(f"Saving mask to {out_path} ...")
-    save_mask_nifti(mask_orig, affine, out_path)
-    print(f"Mask saved in {time.time() - save_start:.2f}s")
-
-    total_time = time.time() - total_start
-    print(f"\n=== TOTAL PROCESSING TIME: {total_time:.2f}s ===")
-    print(f"Breakdown:")
-    print(f"  - Data loading: {load_start - total_start:.2f}s")
-    print(f"  - Preprocessing: {preprocess_start - load_start:.2f}s") 
-    print(f"  - Model loading: {model_start - preprocess_start:.2f}s")
-    print(f"  - Inference: {inference_time:.2f}s")
-    print(f"  - Postprocessing: {time.time() - inference_start - inference_time:.2f}s")
-
-def inference(nifti_path, model, device, save_path, new_spacing=[1.5, 1.5, 1.5], patch_size=[80, 160, 160], stride_factor=0.5, batch_size=8, clip=[-200, 250], threshold=0.45, checkpoint_path=None):
+def inference(nifti_path, device, save_path, new_spacing=[1.5, 1.5, 1.5], patch_size=[80, 160, 160], stride_factor=0.5, batch_size=8, clip=[-200, 250], threshold=0.45, checkpoint_path=None):
     # ensure we have a model
     temp_model_loaded = False
-    if model is None:
-        if checkpoint_path is None:
-            raise ValueError("Either `model` or `checkpoint_path` must be provided.")
-        if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_tmp, _ = load_model(checkpoint_path, device=device)
-        model = model_tmp
-        temp_model_loaded = True
-    else:
-        try:
-            device = next(model.parameters()).device.type
-        except StopIteration:
-            device = "cpu"
+
+    if checkpoint_path is None:
+        raise ValueError("Either `checkpoint_path` must be provided.")
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    model = load_model_from_checkpoint(checkpoint_path)
 
     # load nifti and preprocess 
-    vol_rs, rs_spacing, rs_affine = resample_to_spacing(
-    nifti_path,
-    new_spacing=new_spacing,
-    order=1
-    )
+    img = nib.load(nifti_path)
+    orig_affine = img.affine
+    orig_header = img.header.copy()
 
-    orig_vol, orig_spacing, orig_affine = load_nifti_with_meta(nifti_path)
-    orig_shape = orig_vol.shape
+    vol_rs, _, affine_rs = resample_to_isotropic(img, new_spacing=new_spacing, order=1)
     vol_rs = intensity_clip_normalize(vol_rs, clip_min=float(clip[0]), clip_max=float(clip[1]))
 
     # run sliding-window inference 
@@ -300,16 +141,11 @@ def inference(nifti_path, model, device, save_path, new_spacing=[1.5, 1.5, 1.5],
 
     # threshold and postproccess
     mask_new_spacing = (prob >= threshold).astype(np.uint8)
-    mask_orig = resample_mask_to_original(
-        mask_new_spacing,
-        rs_affine,
-        orig_shape,
-        orig_affine
-    )
+    mask_orig = resample_mask_to_original(mask_new_spacing, affine_rs, img)
 
     # if needed
     if save_path:
-        save_mask_nifti(mask_orig, orig_affine, save_path)
+        save_mask_nifti(mask_orig, orig_affine, orig_header, save_path)
 
     # if we have temporarily uploaded the model
     if temp_model_loaded:
@@ -319,7 +155,10 @@ def inference(nifti_path, model, device, save_path, new_spacing=[1.5, 1.5, 1.5],
         except Exception:
             pass
 
-    return mask_orig.astype(np.uint8)
+    return mask_orig.astype(np.uint8) 
+
+def main():
+    return 
 
 if __name__ == "__main__":
     main()
