@@ -69,18 +69,18 @@ def main():
     p.add_argument("--spacing", nargs=3, type=float, default=[1.5, 1.5, 1.5], help="Target isotropic spacing (mm)")
     args = p.parse_args()
 
-    out_img_dir = os.path.join(args.output_dir, "imagesTr_npy")
-    out_mask_dir = os.path.join(args.output_dir, "labelsTr_npy")
-    os.makedirs(out_img_dir, exist_ok=True)
-    os.makedirs(out_mask_dir, exist_ok=True)
+    out_images_dir = os.path.join(args.output_dir, "imagesTr_npy")
+    out_masks_dir = os.path.join(args.output_dir, "labelsTr_npy")
+    os.makedirs(out_images_dir, exist_ok=True)
+    os.makedirs(out_masks_dir, exist_ok=True)
 
     images_paths = sorted(glob(os.path.join(args.data_dir, "imagesTr", "*.nii*")))
     masks_paths = sorted(glob(os.path.join(args.data_dir, "labelsTr", "*.nii*")))
     assert len(images_paths) == len(masks_paths), "Images and masks count mismatch!"
 
     metadata = []
-    for img_path, mask_path in tqdm(list(zip(images_paths, masks_paths)), desc="Preprocessing"):
-        info = preprocess_case(img_path, mask_path, out_img_dir, out_mask_dir, args.spacing)
+    for img_path, mask_path in tqdm(zip(images_paths, masks_paths), desc="Preprocessing", total=len(images_paths)):
+        info = preprocess_case(img_path, mask_path, out_images_dir, out_masks_dir, args.spacing)
         metadata.append(info)
 
     with open(os.path.join(args.output_dir, "metadata.json"), "w") as file:
