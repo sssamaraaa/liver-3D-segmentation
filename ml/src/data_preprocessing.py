@@ -19,8 +19,10 @@ def load_nifti_pair(img_path, mask_path):
     mask_obj = nib.load(mask_path)
     return img_obj, mask_obj
 
-def save_mask_nifti(mask, affine, header, out_path):
-    nii = nib.Nifti1Image(mask.astype(np.uint8), affine, header)
+def save_mask_nifti(mask, affine, orig_header, out_path):
+    nii = nib.Nifti1Image(mask.astype(np.uint8), affine, orig_header)
+    nii.header['xyzt_units'] = orig_header['xyzt_units']
+    nii.set_data_dtype(np.uint8)
     nib.save(nii, out_path)
 
 def resample_to_isotropic(nifti_image, new_spacing=(1.5, 1.5, 1.5), order=1):
