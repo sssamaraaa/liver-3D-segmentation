@@ -89,8 +89,8 @@ def main(args):
     os.makedirs(out_images_dir, exist_ok=True)
     os.makedirs(out_masks_dir, exist_ok=True)
 
-    images_paths = sorted(glob(os.path.join(args.data_dir, "imagesTr", "*.nii*")))
-    masks_paths = sorted(glob(os.path.join(args.data_dir, "labelsTr", "*.nii*")))
+    images_paths = sorted(glob(os.path.join(args.data_dir, "imagesTr_npy", "*.nii*")))
+    masks_paths = sorted(glob(os.path.join(args.data_dir, "labelsTr_npy", "*.nii*")))
     assert len(images_paths) == len(masks_paths), "Images and masks count mismatch!"
 
     metadata = []
