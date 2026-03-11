@@ -5,6 +5,7 @@ import argparse
 import numpy as np
 import torch
 import matplotlib
+from sklearn.model_selection import KFold
 from logging_conf import setup_logging
 from glob import glob
 from torch.amp import autocast, GradScaler
@@ -20,7 +21,20 @@ from utils import save_checkpoint, seed_everything, worker_init_fn, save_metrics
 matplotlib.use("Agg")
 logger = logging.getLogger(__name__)
 
-def train(args):
+def train_one_epoch():
+    return
+
+def valdate():
+    return
+
+def run_finetune():
+    return
+
+def run_cross_validation():
+    return
+
+
+def run_training(args):
     seed_everything(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info(f"Device: {device}")
@@ -211,10 +225,15 @@ def train(args):
 
 def parse_args():
     p = argparse.ArgumentParser()
+    p.add_argument("--mode", type=str, choices=['train', 'finetune', 'crossval'])
+    p.add_argument("--freeze_encoder", action="store_true")
+    p.add_argument("--kfold", type=int, default=4)
     p.add_argument("--data_dir", type=str, required=True)
     p.add_argument("--output_dir", type=str, default="../results/run1/weights")
     p.add_argument("--output_dir_metrics", type=str, default="../results/run1/metrics")
     p.add_argument("--epochs", type=int, default=200)
+    p.add_argument("--finetune_lr", type=float, default=1e-4)
+    p.add_argument("--pretrained", type=str, default=None)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--weight_decay", type=float, default=1e-5)
     p.add_argument("--patch_size", nargs=3, type=int, default=[80, 160, 160])
@@ -245,4 +264,13 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
     os.makedirs(args.output_dir_metrics, exist_ok=True)
     setup_logging()
-    train(args)
+    run_training(args)
+
+    if args.mode == 'train':
+        run_training(args)
+
+    if args.mode == 'finetune':
+        run_finetune(args)
+
+    if args.mode == 'crossval':
+        run_cross_validation(args)
