@@ -63,3 +63,8 @@ class UNet3D(nn.Module):
         u0 = self.conv_up0(u0)
         out = self.outc(u0)
         return out
+
+    def freeze_encoder(self):
+        for layer in [self.inc, self.down1, self.down2, self.down3, self.down4]:
+            for param in layer.parameters():
+                param.requires_grad = False
