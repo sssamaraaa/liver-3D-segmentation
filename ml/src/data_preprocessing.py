@@ -12,6 +12,7 @@ def parse_args():
     p.add_argument("--data_dir", type=str, required=True, help="Path to original data")
     p.add_argument("--output_dir", type=str, default="./preprocessed", help="Path to save results")
     p.add_argument("--spacing", nargs=3, type=float, default=[1.5, 1.5, 1.5], help="Target isotropic spacing (mm)")
+    p.add_argument("--clip", nargs=2, type=int, default=[-200, 250], help="Target HU values")
     return p.parse_args()
 
 def load_nifti_pair(img_path, mask_path):
@@ -57,7 +58,7 @@ def intensity_clip_normalize(volume, clip_min=-200, clip_max=250):
     volume = (volume - clip_min) / (clip_max - clip_min)
     return volume.astype(np.float32)
 
-def preprocess_case(img_obj, mask_obj, case_id, out_img_dir, out_mask_dir, new_spacing):
+def preprocess_case(img_obj, mask_obj, case_id, out_img_dir, out_mask_dir, new_spacing, clip_min, clip_max):
     """Function performs offline preprocessing to avoid CPU/IO bottlenecks during training."""
     orig_spacing = img_obj.header.get_zooms()
     orig_affine = img_obj.affine
@@ -65,7 +66,7 @@ def preprocess_case(img_obj, mask_obj, case_id, out_img_dir, out_mask_dir, new_s
     img, _, new_affine = resample_to_isotropic(img_obj, new_spacing, order=1)
     mask, _, _ = resample_to_isotropic(mask_obj, new_spacing, order=0)
 
-    img = intensity_clip_normalize(img, -200, 250)
+    img = intensity_clip_normalize(img, clip_min, clip_max)
 
     np.save(os.path.join(out_img_dir, f"{case_id}.npy"), img)
     np.save(os.path.join(out_mask_dir, f"{case_id}.npy"), mask)
@@ -89,15 +90,15 @@ def main(args):
     os.makedirs(out_images_dir, exist_ok=True)
     os.makedirs(out_masks_dir, exist_ok=True)
 
-    images_paths = sorted(glob(os.path.join(args.data_dir, "imagesTr_npy", "*.nii*")))
-    masks_paths = sorted(glob(os.path.join(args.data_dir, "labelsTr_npy", "*.nii*")))
+    images_paths = sorted(glob(os.path.join(args.data_dir, "imagesTr", "*.nii*")))
+    masks_paths = sorted(glob(os.path.join(args.data_dir, "labelsTr", "*.nii*")))
     assert len(images_paths) == len(masks_paths), "Images and masks count mismatch!"
 
     metadata = []
     for img_path, mask_path in tqdm(zip(images_paths, masks_paths), desc="Preprocessing", total=len(images_paths)):
         case_id = os.path.basename(img_path).replace(".nii.gz", "")
         img_obj, mask_obj = load_nifti_pair(img_path, mask_path)
-        info = preprocess_case(img_obj, mask_obj, case_id, out_images_dir, out_masks_dir, args.spacing)
+        info = preprocess_case(img_obj, mask_obj, case_id, out_images_dir, out_masks_dir, args.spacing, args.clip[0], args.clip[1])
         metadata.append(info)
 
     with open(os.path.join(args.output_dir, "metadata.json"), "w") as file:
