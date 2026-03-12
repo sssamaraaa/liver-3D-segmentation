@@ -148,28 +148,21 @@ def run_training(args):
                     msk = np.load(msk_path).astype(np.float32)
                     gt = (msk > 0).astype(np.uint8) # ground truth
 
-                    # skip empty GT volumes, but count them
-                    if gt.sum() == 0:
-                        # compute whether model predicts anything (FP on empty GT)
-                        prob_map = sliding_window_inference(
+                    prob_map = sliding_window_inference(
                             img, model, device,
                             patch_size=tuple(args.patch_size),
                             stride_factor=args.sw_stride,
                             batch_size=args.sw_batch
                         )
+
+                    # skip empty GT volumes, but count them
+                    if gt.sum() == 0:
                         pred = (prob_map >= args.threshold).astype(np.uint8)
                         if pred.sum() > 0:
                             val_stats['fp_on_empty_gt'] += 1
                         val_stats['skipped_empty_gt'] += 1
                         continue
 
-                    # normal case
-                    prob_map = sliding_window_inference(
-                        img, model, device,
-                        patch_size=tuple(args.patch_size),
-                        stride_factor=args.sw_stride,
-                        batch_size=args.sw_batch
-                    )
                     pred = (prob_map >= args.threshold).astype(np.uint8)
 
                     # basic counts
