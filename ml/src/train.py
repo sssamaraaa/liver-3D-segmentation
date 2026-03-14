@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def setup_env(args):
     seed_everything(args.seed)
-    device = ('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f"Device: {device}")
     return device
 
