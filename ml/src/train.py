@@ -21,33 +21,20 @@ from utils import save_checkpoint, seed_everything, worker_init_fn, save_metrics
 matplotlib.use("Agg")
 logger = logging.getLogger(__name__)
 
-def train_one_epoch():
-    return
-
-def valdate():
-    return
-
-def run_finetune():
-    return
-
-def run_cross_validation():
-    return
-
-
-def run_training(args):
+def setup_env(args):
     seed_everything(args.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = ('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f"Device: {device}")
+    return device
 
+def initialize_dataset(args):
     image_paths = sorted(glob(os.path.join(args.data_dir, "imagesTr_npy", "*.npy")))
     mask_paths = sorted(glob(os.path.join(args.data_dir, "labelsTr_npy", "*.npy")))
     assert len(image_paths) > 0, f"No preprocessed .npy files in {args.data_dir}/imagesTr_npy"
     assert len(image_paths) == len(mask_paths), "Mismatch between image and mask counts"
+    return image_paths, mask_paths
 
-    train_images, train_masks, val_images, val_masks = split_dataset(image_paths, mask_paths, args.val_frac)
-    logging.info(f"Train vols: {len(train_images)}, Val vols: {len(val_images)}")
-
-    # datasets / dataloaders
+def build_dataloader(args, train_images, train_masks):
     train_ds = LiverPatchDataset(
         train_images,
         train_masks,
@@ -66,122 +53,146 @@ def run_training(args):
         worker_init_fn=worker_init_fn
     )
 
-    # model
+    return train_loader
+
+def build_model(args, device):
     model = UNet3D(in_ch=args.in_ch, out_ch=args.out_ch, base_filters=args.base_filters).to(device)
+    return model
+
+def build_training_components(args, model):
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs) if args.scheduler == 'cosine' else None
     scaler = GradScaler()
     criterion = DiceBCELoss(weight_bce=args.bce_weight)
 
-    best_val_dice = 0.0
-    global_step = 0
-    accumulation_steps = args.accumulation_steps
+    return optimizer, scheduler, scaler, criterion
+
+def build_training_pipeline(args):
+    device = setup_env(args)
+    image_paths, mask_paths = initialize_dataset(args)
+    train_images, train_masks, val_images, val_masks = split_dataset(image_paths,mask_paths,args.val_frac)
+    logging.info(f"Train vols: {len(train_images)}, Val vols: {len(val_images)}")
+
+    train_loader = build_dataloader(args, train_images, train_masks)
+    model = build_model(args, device)
+    optimizer, scheduler, scaler, criterion = build_training_components(args, model)
+
+    return device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion
+
+def train_one_epoch(args, train_loader, epoch, device, model, criterion, optimizer, scaler, accumulation_steps, epoch_losses, running_loss, global_step):
+    pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch}/{args.epochs}")
+
+    for step, (img, msk) in pbar:
+        img = img.float().to(device, non_blocking=True)
+        msk = msk.float().to(device, non_blocking=True)
+
+        with autocast(device_type=device.type):
+            logits = model(img)
+            loss = criterion(logits, msk)
+            loss = loss / accumulation_steps
+
+        scaler.scale(loss).backward()
+
+        if (step + 1) % accumulation_steps == 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
+            global_step += 1
+
+        true_loss = loss.item() * accumulation_steps
+        running_loss += true_loss
+        epoch_losses.append(true_loss)
+        pbar.set_postfix({
+            "loss": f"{running_loss / (step + 1):.4f}",
+            "lr": optimizer.param_groups[0]['lr']
+        })
+
+    return running_loss, global_step
+
+def validate(model, epoch, epoch_losses, val_images, val_masks, device, args):
+    val_stats = {
+        'epoch': epoch,
+        'losses': epoch_losses,
+        'dices': [], 'ious': [], 'precisions': [], 'recalls': [], 
+        'val_cases': 0, 'skipped_empty_gt': 0, 'fp_on_empty_gt': 0
+    }
+
+    # eval
+    model.eval()
+    with torch.no_grad():
+        for _, (img_path, msk_path) in enumerate(zip(val_images, val_masks)):
+            # load whole volume for sliding-window inference
+            img = np.load(img_path).astype(np.float32)
+            msk = np.load(msk_path).astype(np.float32)
+            gt = (msk > 0).astype(np.uint8) # ground truth
+
+            prob_map = sliding_window_inference(
+                    img, model, device,
+                    patch_size=tuple(args.patch_size),
+                    stride_factor=args.sw_stride,
+                    batch_size=args.sw_batch
+                )
+
+            # skip empty GT volumes, but count them
+            if gt.sum() == 0:
+                pred = (prob_map >= args.threshold).astype(np.uint8)
+                if pred.sum() > 0:
+                    val_stats['fp_on_empty_gt'] += 1
+                val_stats['skipped_empty_gt'] += 1
+                continue
+
+            pred = (prob_map >= args.threshold).astype(np.uint8)
+
+            # basic counts
+            inter = int(np.logical_and(pred, gt).sum()) # TP
+            p_sum = int(pred.sum()) # TP + FP - predicted sum
+            g_sum = int(gt.sum()) # TP + FN - ground truth sum
+
+            dice_val = dice(inter, p_sum, g_sum)
+            iou_val = iou(inter, p_sum, g_sum)
+            prec = precision(inter, p_sum)
+            rec = recall(inter, g_sum)
+
+            # surface metrics
+            val_stats['dices'].append(float(dice_val))
+            val_stats['ious'].append(float(iou_val))
+            val_stats['precisions'].append(float(prec))
+            val_stats['recalls'].append(float(rec))
+            val_stats['val_cases'] += 1
+
+    return val_stats
+
+def run_finetune():
+    return
+
+def run_cross_validation():
+    return
+
+
+def run_training(args, device, model, criterion, optimizer, scheduler, scaler, train_loader, val_images, val_masks, accumulation_steps=8):
     start_epoch = 1
     all_epoch_stats = []
-
-    if args.resume is not None:
-        logging.info(f"Resume training from {args.resume}")
-
-        start_epoch, best_val_dice, _ = load_checkpoint(
-                                                        args.resume,
-                                                        model,
-                                                        optimizer,
-                                                        scheduler,
-                                                        device
-                                                    )
-        logging.info(f"Resumed from epoch {start_epoch} with best Dice {best_val_dice:.4f}")
-
+    global_step = 0
+    best_val_dice = 0.0
     #train
     try:
         for epoch in range(start_epoch, args.epochs + 1):
             epoch_losses = []
             model.train()
             running_loss = 0.0
-            pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch}/{args.epochs}")
             optimizer.zero_grad()
 
-            for step, (img, msk) in pbar:
-                img = img.float().to(device, non_blocking=True)
-                msk = msk.float().to(device, non_blocking=True)
-
-                with autocast(device_type=device.type):
-                    logits = model(img)
-                    loss = criterion(logits, msk)
-                    loss = loss / accumulation_steps
-
-                scaler.scale(loss).backward()
-
-                if (step + 1) % accumulation_steps == 0:
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad()
-                    global_step += 1
-
-                true_loss = loss.item() * accumulation_steps
-                running_loss += true_loss
-                epoch_losses.append(true_loss)
-                pbar.set_postfix({
-                    "loss": f"{running_loss / (step + 1):.4f}",
-                    "lr": optimizer.param_groups[0]['lr']
-                })
-
+            # train
+            running_loss, global_step = train_one_epoch(args, train_loader, epoch, device, model, criterion, optimizer, scaler, accumulation_steps, epoch_losses, running_loss, global_step)
+            
             # scheduler step (end of epoch)
             if scheduler is not None:
                 scheduler.step()
 
             # validation
-            val_stats = {
-                'epoch': epoch,
-                'losses': epoch_losses,
-                'dices': [], 'ious': [], 'precisions': [], 'recalls': [], 
-                'val_cases': 0, 'skipped_empty_gt': 0, 'fp_on_empty_gt': 0
-            }
-
-            # eval
-            model.eval()
-            with torch.no_grad():
-                for _, (img_path, msk_path) in enumerate(zip(val_images, val_masks)):
-                    # load whole volume for sliding-window inference
-                    img = np.load(img_path).astype(np.float32)
-                    msk = np.load(msk_path).astype(np.float32)
-                    gt = (msk > 0).astype(np.uint8) # ground truth
-
-                    prob_map = sliding_window_inference(
-                            img, model, device,
-                            patch_size=tuple(args.patch_size),
-                            stride_factor=args.sw_stride,
-                            batch_size=args.sw_batch
-                        )
-
-                    # skip empty GT volumes, but count them
-                    if gt.sum() == 0:
-                        pred = (prob_map >= args.threshold).astype(np.uint8)
-                        if pred.sum() > 0:
-                            val_stats['fp_on_empty_gt'] += 1
-                        val_stats['skipped_empty_gt'] += 1
-                        continue
-
-                    pred = (prob_map >= args.threshold).astype(np.uint8)
-
-                    # basic counts
-                    inter = int(np.logical_and(pred, gt).sum()) # TP
-                    p_sum = int(pred.sum()) # TP + FP - predicted sum
-                    g_sum = int(gt.sum()) # TP + FN - ground truth sum
-
-                    dice_val = dice(inter, p_sum, g_sum)
-                    iou_val = iou(inter, p_sum, g_sum)
-                    prec = precision(inter, p_sum)
-                    rec = recall(inter, g_sum)
-
-                    # surface metrics
-                    val_stats['dices'].append(float(dice_val))
-                    val_stats['ious'].append(float(iou_val))
-                    val_stats['precisions'].append(float(prec))
-                    val_stats['recalls'].append(float(rec))
-                    val_stats['val_cases'] += 1
-
+            val_stats = validate(model, epoch, epoch_losses, val_images, val_masks, device, args)
             # compute mean_dice
             if len(val_stats['dices']) == 0:
                 mean_dice = 0.0
@@ -238,7 +249,6 @@ def parse_args():
     p.add_argument("--augment", action="store_true")
     p.add_argument("--num_workers", type=int, default=4)
     p.add_argument("--val_frac", type=float, default=0.15)
-    p.add_argument("--val_every", type=int, default=1)
     p.add_argument("--seed", type=int, default=1337)
     p.add_argument("--bce_weight", type=float, default=0.5)
     p.add_argument("--accumulation_steps", type=int, default=8)
@@ -257,10 +267,10 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
     os.makedirs(args.output_dir_metrics, exist_ok=True)
     setup_logging()
-    run_training(args)
+    device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion = build_training_pipeline(args)
 
     if args.mode == 'train':
-        run_training(args)
+        run_training(args, device, model, criterion, optimizer, scheduler, scaler, train_loader, val_images, val_masks, accumulation_steps=args.accumulation_steps)
 
     if args.mode == 'finetune':
         run_finetune(args)
