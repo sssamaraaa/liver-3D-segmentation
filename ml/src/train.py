@@ -19,7 +19,6 @@ from utils import save_checkpoint, seed_everything, worker_init_fn, save_metrics
 
 # utils
 matplotlib.use("Agg")
-logger = logging.getLogger(__name__)
 
 def setup_env(args):
     seed_everything(args.seed)
@@ -76,6 +75,34 @@ def build_training_pipeline(args):
     train_loader = build_dataloader(args, train_images, train_masks)
     model = build_model(args, device)
     optimizer, scheduler, scaler, criterion = build_training_components(args, model)
+
+    return device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion
+
+def build_finetune_pipeline(args, fold_idx=0):
+    device = setup_env(args)
+    image_paths, mask_paths = initialize_dataset(args)
+
+    kf = KFold(n_splits=args.kfold, shuffle=True, random_state=args.seed)
+    splits = list(kf.split(image_paths))
+    train_idx, val_idx = splits[fold_idx]
+
+    train_images = [image_paths[i] for i in train_idx]
+    train_masks = [mask_paths[i] for i in train_idx]
+    val_images = [image_paths[i] for i in val_idx]
+    val_masks = [mask_paths[i] for i in val_idx]
+
+    logging.info(f"Fold {fold_idx+1}. Train vols: {len(train_images)}, Val vols: {len(val_images)}")
+
+    train_loader = build_dataloader(args, train_images, train_masks)
+
+    model = build_model(args, device)
+    if args.freeze_encoder:
+        model.freeze_encoder()
+
+    optimizer, scheduler, scaler, criterion = build_training_components(args, model)    
+
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = args.finetune_lr
 
     return device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion
 
@@ -164,13 +191,6 @@ def validate(model, epoch, epoch_losses, val_images, val_masks, device, args):
 
     return val_stats
 
-def run_finetune():
-    return
-
-def run_cross_validation():
-    return
-
-
 def run_training(args, device, model, criterion, optimizer, scheduler, scaler, train_loader, val_images, val_masks, accumulation_steps=8):
     start_epoch = 1
     all_epoch_stats = []
@@ -229,7 +249,7 @@ def run_training(args, device, model, criterion, optimizer, scheduler, scaler, t
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--mode", type=str, choices=['train', 'finetune', 'crossval'])
+    p.add_argument("--mode", type=str, choices=['train', 'finetune'])
     p.add_argument("--freeze_encoder", action="store_true")
     p.add_argument("--kfold", type=int, default=4)
     p.add_argument("--data_dir", type=str, required=True)
@@ -237,7 +257,6 @@ def parse_args():
     p.add_argument("--output_dir_metrics", type=str, default="../results/run1/metrics")
     p.add_argument("--epochs", type=int, default=200)
     p.add_argument("--finetune_lr", type=float, default=1e-4)
-    p.add_argument("--pretrained", type=str, default=None)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--weight_decay", type=float, default=1e-5)
     p.add_argument("--patch_size", nargs=3, type=int, default=[80, 160, 160])
@@ -259,7 +278,8 @@ def parse_args():
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--grad_clip", type=float, default=1.0)
     p.add_argument("--scheduler", type=str, choices=['cosine','none'], default='cosine')
-    p.add_argument("--resume", type=str, default=None)
+    p.add_argument("--resume", type=str, default=None, help="Path to checkpoint (mode = train)")
+    p.add_argument("--resume_finetune", type=str, default=None, help="Path to checkpoint (mode = finetune)")
     return p.parse_args()
 
 if __name__ == "__main__":
@@ -273,7 +293,9 @@ if __name__ == "__main__":
         run_training(args, device, model, criterion, optimizer, scheduler, scaler, train_loader, val_images, val_masks, accumulation_steps=args.accumulation_steps)
 
     if args.mode == 'finetune':
-        run_finetune(args)
+        for fold_idx in range(args.kfold):
+            logging.info(f"Fold {fold_idx + 1}/{args.kfold}")
+            device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion = build_finetune_pipeline(args, fold_idx)
+            run_training(args, device, model, criterion, optimizer, scheduler, scaler, train_loader, val_images, val_masks, accumulation_steps=8)
 
-    if args.mode == 'crossval':
-        run_cross_validation(args)
+
