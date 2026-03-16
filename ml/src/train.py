@@ -15,7 +15,7 @@ from dataset import LiverPatchDataset, augment_ct3d, split_dataset
 from model import UNet3D
 from metrics import DiceBCELoss, dice, iou, precision, recall
 from inference import sliding_window_inference
-from utils import save_checkpoint, seed_everything, worker_init_fn, save_metrics_plots, load_checkpoint
+from utils import save_checkpoint, seed_everything, worker_init_fn, save_metrics_plots, load_checkpoint, load_model_from_checkpoint
 
 # utils
 matplotlib.use("Agg")
@@ -95,7 +95,7 @@ def build_finetune_pipeline(args, fold_idx=0):
 
     train_loader = build_dataloader(args, train_images, train_masks)
 
-    model = build_model(args, device)
+    model = load_model_from_checkpoint(args, device)
     if args.freeze_encoder:
         model.freeze_encoder()
 
@@ -196,6 +196,11 @@ def run_training(args, device, model, criterion, optimizer, scheduler, scaler, t
     all_epoch_stats = []
     global_step = 0
     best_val_dice = 0.0
+
+    if args.resume is not None:
+        start_epoch, best_val_dice, args = load_checkpoint(args.resume, model, optimizer, scheduler, device)
+        logging.info(f"Resume training from {start_epoch} with best Dice: {best_val_dice}")
+
     #train
     try:
         for epoch in range(start_epoch, args.epochs + 1):
@@ -278,8 +283,7 @@ def parse_args():
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--grad_clip", type=float, default=1.0)
     p.add_argument("--scheduler", type=str, choices=['cosine','none'], default='cosine')
-    p.add_argument("--resume", type=str, default=None, help="Path to checkpoint (mode = train)")
-    p.add_argument("--resume_finetune", type=str, default=None, help="Path to checkpoint (mode = finetune)")
+    p.add_argument("--resume", type=str, default=None, help="Path to checkpoint")
     return p.parse_args()
 
 if __name__ == "__main__":
@@ -296,6 +300,6 @@ if __name__ == "__main__":
         for fold_idx in range(args.kfold):
             logging.info(f"Fold {fold_idx + 1}/{args.kfold}")
             device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion = build_finetune_pipeline(args, fold_idx)
-            run_training(args, device, model, criterion, optimizer, scheduler, scaler, train_loader, val_images, val_masks, accumulation_steps=8)
+            run_training(args, device, model, criterion, optimizer, scheduler, scaler, train_loader, val_images, val_masks, accumulation_steps=args.accumulation_steps)
 
 
