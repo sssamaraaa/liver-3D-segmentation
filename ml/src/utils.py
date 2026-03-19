@@ -7,6 +7,7 @@ import json
 import matplotlib.pyplot as plt
 from ml.src.model import UNet3D
 
+logger = logging.getlogger(__name__)
 
 def seed_everything(seed=42):
     random.seed(seed)
@@ -33,7 +34,7 @@ def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag
         "args": vars(args),
     }, ckpt_path)
 
-    logging.info(f"[checkpoint] Saved: {ckpt_path}")
+    logger.info(f"[checkpoint] Saved: {ckpt_path}")
 
 def load_checkpoint(ckpt_path, model, optimizer=None, scheduler=None, device="cuda"):
     checkpoint = torch.load(ckpt_path, map_location=device)
@@ -128,4 +129,4 @@ def save_metrics_plots(all_epoch_stats, out_dir):
     with open(os.path.join(out_dir, 'metrics_per_epoch.json'), 'w') as file:
         json.dump(summary, file, indent=2)
 
-    logging.info(f"[metrics] Saved plots and summaries to {out_dir}")
+    logger.info(f"[metrics] Saved plots and summaries to {out_dir}")
