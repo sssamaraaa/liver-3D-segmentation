@@ -3,8 +3,9 @@ import numpy as np
 import nibabel as nib
 import time
 from torch.amp import autocast
-from .data_preprocessing import resample_to_isotropic, resample_mask_to_original, intensity_clip_normalize, save_mask_nifti
-from .utils import load_model_from_checkpoint
+from ml.src.data_preprocessing import resample_to_isotropic, resample_mask_to_original, intensity_clip_normalize, save_mask_nifti
+from ml.src.utils import load_model_from_checkpoint
+from ml.src.model import UNet3D    
 
 
 def get_start_points(max_size, patch_size, stride):
@@ -44,16 +45,16 @@ def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.
                                  device=device)
 
         coords_list = []
-        batch_count = 0
+        patches_in_batch  = 0
         total_patches = 0
 
-        def process_batch(batch_count, coords_list):
-            if batch_count == 0:
+        def process_batch(patches_in_batch , coords_list):
+            if patches_in_batch  == 0:
                 return
                 
             # OP 4: use mixed precision (autocast) for faster computation on CUDA GPUs
             with autocast(device_type="cuda", enabled=use_fp16):
-                logits = model(batch_tensor[:batch_count])
+                logits = model(batch_tensor[:patches_in_batch])
                 # OP 5: convert to float32 after sigmoid for accumulation precision
                 probs = torch.sigmoid(logits).squeeze(1).float()  
                 
@@ -95,31 +96,33 @@ def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.
                     if use_fp16:
                         patch_tensor = patch_tensor.half()
                     
-                    batch_tensor[batch_count, 0] = patch_tensor
+                    batch_tensor[patches_in_batch , 0] = patch_tensor
                     coords_list.append((z, y, x))
-                    batch_count += 1
+                    patches_in_batch  += 1
                     total_patches += 1
 
-                    if batch_count == batch_size:
-                        process_batch(batch_count, coords_list)
-                        batch_count = 0
+                    if patches_in_batch  == batch_size:
+                        process_batch(patches_in_batch, coords_list)
+                        patches_in_batch  = 0
                         coords_list = []
 
-        process_batch(batch_count, coords_list)
+        process_batch(patches_in_batch, coords_list)
         
         prob_map = prob_map / torch.clamp(count_map, min=1e-8)
         return prob_map.numpy()
 
-def inference(nifti_path, device, save_path, new_spacing=[1.5, 1.5, 1.5], patch_size=[80, 160, 160], stride_factor=0.5, batch_size=8, clip=[-200, 250], threshold=0.45, checkpoint_path=None):
-    # ensure we have a model
-    temp_model_loaded = False
-
-    if checkpoint_path is None:
-        raise ValueError("Either `checkpoint_path` must be provided.")
+def inference(nifti_path, device, save_path, model=None, new_spacing=[1.5, 1.5, 1.5], patch_size=[80, 160, 160], stride_factor=0.5, batch_size=8, clip=[-200, 250], threshold=0.5, checkpoint_path=None):
+    if model is None and checkpoint_path is None:
+        raise ValueError("Either `model` must be provided or `checkpoint_path` must be specified.")
     if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    model = load_model_from_checkpoint(checkpoint_path)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    if model is None:
+        model = UNet3D(in_ch=1, out_ch=1, base_filters=16)
+        model = load_model_from_checkpoint(model, checkpoint_path, device)
+        model = model.to(device)
+        model = model.half()
+        model.eval()
 
     # load nifti and preprocess 
     img = nib.load(nifti_path)
@@ -133,7 +136,7 @@ def inference(nifti_path, device, save_path, new_spacing=[1.5, 1.5, 1.5], patch_
     prob = sliding_window_inference(
         vol_rs,
         model,
-        torch.device("cuda" if device == "cuda" or device == "cuda:0" else "cpu"),
+        device,
         patch_size=patch_size,
         stride_factor=stride_factor,
         batch_size=batch_size,
@@ -147,18 +150,10 @@ def inference(nifti_path, device, save_path, new_spacing=[1.5, 1.5, 1.5], patch_
     if save_path:
         save_mask_nifti(mask_orig, orig_affine, orig_header, save_path)
 
-    # if we have temporarily uploaded the model
-    if temp_model_loaded:
-        try:
-            del model
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
-
-    return mask_orig.astype(np.uint8) 
+    return mask_orig
 
 def main():
-    return 
+    return inference('src/datasets/customer_data/ct/abd_arter_5.nii.gz', device='cuda', save_path='src/test/test.nii', checkpoint_path='model/unet.pth')
 
 if __name__ == "__main__":
     main()
