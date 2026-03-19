@@ -19,11 +19,13 @@ from utils import save_checkpoint, seed_everything, worker_init_fn, save_metrics
 
 # utils
 matplotlib.use("Agg")
+setup_logging()
+logger = logging.getLogger(__name__)
 
 def setup_env(args):
     seed_everything(args.seed)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    logging.info(f"Device: {device}")
+    logger.info(f"Device: {device}")
     return device
 
 def initialize_dataset(args):
@@ -70,7 +72,7 @@ def build_training_pipeline(args):
     device = setup_env(args)
     image_paths, mask_paths = initialize_dataset(args)
     train_images, train_masks, val_images, val_masks = split_dataset(image_paths,mask_paths,args.val_frac)
-    logging.info(f"Train vols: {len(train_images)}, Val vols: {len(val_images)}")
+    logger.info(f"Train vols: {len(train_images)}, Val vols: {len(val_images)}")
 
     train_loader = build_dataloader(args, train_images, train_masks)
     model = build_model(args, device)
@@ -91,7 +93,7 @@ def build_finetune_pipeline(args, fold_idx=0):
     val_images = [image_paths[i] for i in val_idx]
     val_masks = [mask_paths[i] for i in val_idx]
 
-    logging.info(f"Fold {fold_idx+1}. Train vols: {len(train_images)}, Val vols: {len(val_images)}")
+    logger.info(f"Fold {fold_idx+1}. Train vols: {len(train_images)}, Val vols: {len(val_images)}")
 
     train_loader = build_dataloader(args, train_images, train_masks)
 
@@ -199,7 +201,7 @@ def run_training(args, device, model, criterion, optimizer, scheduler, scaler, t
 
     if args.resume is not None:
         start_epoch, best_val_dice, args = load_checkpoint(args.resume, model, optimizer, scheduler, device)
-        logging.info(f"Resume training from {start_epoch} with best Dice: {best_val_dice}")
+        logger.info(f"Resume training from {start_epoch} with best Dice: {best_val_dice}")
 
     #train
     try:
@@ -221,18 +223,18 @@ def run_training(args, device, model, criterion, optimizer, scheduler, scaler, t
             # compute mean_dice
             if len(val_stats['dices']) == 0:
                 mean_dice = 0.0
-                logging.warning("Warning: no valid dice scores (all GT empty or skipped). Setting mean_dice = 0.")
+                logger.warning("Warning: no valid dice scores (all GT empty or skipped). Setting mean_dice = 0.")
             else:
                 mean_dice = float(np.mean(val_stats['dices']))
 
-            logging.info(f"Epoch {epoch} validation mean Dice: {mean_dice:.4f} (cases: {val_stats['val_cases']}, skipped empty: {val_stats['skipped_empty_gt']}, fp_on_empty_gt: {val_stats['fp_on_empty_gt']})")
+            logger.info(f"Epoch {epoch} validation mean Dice: {mean_dice:.4f} (cases: {val_stats['val_cases']}, skipped empty: {val_stats['skipped_empty_gt']}, fp_on_empty_gt: {val_stats['fp_on_empty_gt']})")
             val_stats['mean_dice'] = mean_dice
 
             # save best model
             if mean_dice > best_val_dice:
                 best_val_dice = mean_dice
                 save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag="best_model.pth")
-                logging.info(f"Saved best model with Dice={best_val_dice:.4f}")
+                logger.info(f"Saved best model with Dice={best_val_dice:.4f}")
 
             if epoch % args.checkpoint_every == 0:
                 save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag="intermediate.pth")
@@ -241,16 +243,16 @@ def run_training(args, device, model, criterion, optimizer, scheduler, scaler, t
             save_metrics_plots(all_epoch_stats, args.output_dir_metrics)
 
     except KeyboardInterrupt:
-        logging.info("\n[interrupted] Training interrupted. Saving current checkpoint and metrics...")
+        logger.info("\n[interrupted] Training interrupted. Saving current checkpoint and metrics...")
         save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag="interrupted")
         save_metrics_plots(all_epoch_stats, args.output_dir_metrics)
-        logging.info("Checkpoint saved. Exiting safely.")
-        logging.info(f"Training finished. Best val dice: {best_val_dice}")
+        logger.info("Checkpoint saved. Exiting safely.")
+        logger.info(f"Training finished. Best val dice: {best_val_dice}")
         sys.exit(0)
 
     # final save
     save_metrics_plots(all_epoch_stats, args.output_dir_metrics)
-    logging.info(f"Training finished. Best val dice: {best_val_dice}")
+    logger.info(f"Training finished. Best val dice: {best_val_dice}")
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -290,7 +292,6 @@ if __name__ == "__main__":
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
     os.makedirs(args.output_dir_metrics, exist_ok=True)
-    setup_logging()
     device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion = build_training_pipeline(args)
 
     if args.mode == 'train':
@@ -298,7 +299,7 @@ if __name__ == "__main__":
 
     if args.mode == 'finetune':
         for fold_idx in range(args.kfold):
-            logging.info(f"Fold {fold_idx + 1}/{args.kfold}")
+            logger.info(f"Fold {fold_idx + 1}/{args.kfold}")
             device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion = build_finetune_pipeline(args, fold_idx)
             run_training(args, device, model, criterion, optimizer, scheduler, scaler, train_loader, val_images, val_masks, accumulation_steps=args.accumulation_steps)
 
