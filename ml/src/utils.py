@@ -5,7 +5,7 @@ import random
 import numpy as np
 import json
 import matplotlib.pyplot as plt
-from .model import UNet3D
+from ml.src.model import UNet3D
 
 
 def seed_everything(seed=42):
@@ -27,11 +27,6 @@ def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag
     torch.save({
         "epoch": epoch,
         "model_state": model.state_dict(),
-        "model_config": {
-            "in_ch": args.in_ch,
-            "out_ch": args.out_ch,
-            "base_filters": args.base_filters,
-        },
         "optimizer_state": optimizer.state_dict(),
         "scheduler_state": scheduler.state_dict() if scheduler is not None else None,
         "best_val_dice": best_val_dice,
@@ -40,9 +35,8 @@ def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag
 
     logging.info(f"[checkpoint] Saved: {ckpt_path}")
 
-def load_checkpoint(ckpt_path, model, optimizer=None, scheduler=None, device="cpu"):
+def load_checkpoint(ckpt_path, model, optimizer=None, scheduler=None, device="cuda"):
     checkpoint = torch.load(ckpt_path, map_location=device)
-    
     model.load_state_dict(checkpoint["model_state"])
     
     if optimizer is not None and "optimizer_state" in checkpoint:
@@ -58,18 +52,9 @@ def load_checkpoint(ckpt_path, model, optimizer=None, scheduler=None, device="cp
 
 def load_model_from_checkpoint(ckpt_path, device):
     checkpoint = torch.load(ckpt_path, map_location=device)
-
-    args = checkpoint["args"]
-
-    model = UNet3D(
-        in_ch=args["in_ch"],
-        out_ch=args["out_ch"],
-        base_filters=args["base_filters"]
-    )
-
+    model = UNet3D(in_ch=1, out_ch=1, base_filters=16)
     model.load_state_dict(checkpoint["model_state"])
     model.to(device)
-    model.eval()
 
     return model
 
