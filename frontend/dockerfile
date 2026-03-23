@@ -1,6 +1,6 @@
 FROM node:20-bullseye AS build
 
-WORKDIR /frontend
+WORKDIR /proj/frontend
 
 COPY package*.json ./
 
