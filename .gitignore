@@ -9,6 +9,8 @@ ml/src/metrics
 ml/src/__pycache__
 ml/src/test_on_client
 ml/src/results_ft
+ml/logs
+ml/model
 
 backend/app/__pycache__
 backend/app/api/__pycache__
