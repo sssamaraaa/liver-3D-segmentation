@@ -111,18 +111,17 @@ def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.
         prob_map = prob_map / torch.clamp(count_map, min=1e-8)
         return prob_map.numpy()
 
-def inference(nifti_path, device, save_path, model=None, new_spacing=[1.5, 1.5, 1.5], patch_size=[80, 160, 160], stride_factor=0.5, batch_size=8, clip=[-200, 250], threshold=0.5, checkpoint_path=None):
-    if model is None and checkpoint_path is None:
-        raise ValueError("Either `model` must be provided or `checkpoint_path` must be specified.")
+def inference(nifti_path, save_path, checkpoint_path=None, device=None, new_spacing=[1.5, 1.5, 1.5], patch_size=[80, 160, 160], stride_factor=0.5, batch_size=8, clip=[-200, 250], threshold=0.5):
+    if checkpoint_path is None:
+        raise ValueError("`checkpoint_path` must be specified.")
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    if model is None:
-        model = UNet3D(in_ch=1, out_ch=1, base_filters=16)
-        model = load_model_from_checkpoint(model, checkpoint_path, device)
-        model = model.to(device)
-        model = model.half()
-        model.eval()
+    model = UNet3D(in_ch=1, out_ch=1, base_filters=16)
+    model = load_model_from_checkpoint(checkpoint_path, device)
+    model = model.to(device)
+    model = model.half()
+    model.eval()
 
     # load nifti and preprocess 
     img = nib.load(nifti_path)
