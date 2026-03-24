@@ -7,7 +7,7 @@ import json
 import matplotlib.pyplot as plt
 from ml.src.model import UNet3D
 
-logger = logging.getlogger(__name__)
+logger = logging.getLogger(__name__)
 
 def seed_everything(seed=42):
     random.seed(seed)
