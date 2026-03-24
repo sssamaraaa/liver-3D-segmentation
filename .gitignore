@@ -1,34 +1,16 @@
 .venv/
 .env
+__pycache__
 
-ml/__pycache__
-ml/src/results
 ml/src/datasets
-ml/src/test
-ml/src/metrics
-ml/src/__pycache__
-ml/src/test_on_client
-ml/src/results_ft
+ml/data
 ml/logs
 ml/model
-
-backend/app/__pycache__
-backend/app/api/__pycache__
-backend/app/services/__pycache__
-
-frontend/node_modules
-frontend/assets
 
 storage
 
 tests/
 
-nginx/conf/*
+nginx/
 !nginx/conf/nginx.conf
 !nginx/conf/nginx.docker.conf
-nginx/contrib/
-nginx/docs
-nginx/html
-nginx/logs
-nginx/temp
-nginx/nginx.exe
