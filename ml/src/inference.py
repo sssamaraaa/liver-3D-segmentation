@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import nibabel as nib
-import time
+import logging
 from torch.amp import autocast
 from ml.src.data_preprocessing import resample_to_isotropic, resample_mask_to_original, intensity_clip_normalize, save_mask_nifti
 from ml.src.utils import load_model_from_checkpoint
@@ -25,6 +25,7 @@ def get_start_points(max_size, patch_size, stride):
 
 def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.5, batch_size=4):
     # OP 1: use torch.inference_mode() for faster inference with less overhead
+    logging.info(f"Running SW...")
     with torch.inference_mode():
         z_max, y_max, x_max = volume.shape
         dz, dy, dx = patch_size
@@ -107,21 +108,20 @@ def sliding_window_inference(volume, model, device, patch_size, stride_factor=0.
                         coords_list = []
 
         process_batch(patches_in_batch, coords_list)
-        
+
         prob_map = prob_map / torch.clamp(count_map, min=1e-8)
+        print(f"Probability map received...")
         return prob_map.numpy()
 
-def inference(nifti_path, save_path, checkpoint_path=None, device=None, new_spacing=[1.5, 1.5, 1.5], patch_size=[80, 160, 160], stride_factor=0.5, batch_size=8, clip=[-200, 250], threshold=0.5):
-    if checkpoint_path is None:
-        raise ValueError("`checkpoint_path` must be specified.")
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    model = UNet3D(in_ch=1, out_ch=1, base_filters=16)
-    model = load_model_from_checkpoint(checkpoint_path, device)
-    model = model.to(device)
-    model = model.half()
-    model.eval()
+def inference(nifti_path, model, save_path=None, checkpoint_path=None, device=None, new_spacing=[1.5, 1.5, 1.5], patch_size=[80, 160, 160], stride_factor=0.5, batch_size=8, clip=[-200, 250], threshold=0.5):
+    if checkpoint_path:
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        model = UNet3D(in_ch=1, out_ch=1, base_filters=16)
+        model = load_model_from_checkpoint(checkpoint_path, device)
+        model = model.half()
+        model.eval()
 
     # load nifti and preprocess 
     img = nib.load(nifti_path)
