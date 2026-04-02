@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
 
     try:
         model_service = ModelService(WEIGHTS_PATH)
-        model_service.set_device("cuda")
+        model_service.set_device("cpu")
         model_service.create_model()
         model_service.load_weights()
     except Exception as e:

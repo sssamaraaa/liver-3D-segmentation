@@ -16,10 +16,13 @@ class ModelService():
         self.model = UNet3D(in_ch=1, out_ch=1, base_filters=16)
 
     def load_weights(self):
-        weights = torch.load(self.weights)
+        weights = torch.load(self.weights, map_location=self.device)
         self.model.load_state_dict(weights["model_state"])
         self.model.to(self.device)
-        self.model.half()
+
+        if self.device.type == "cuda":
+            self.model.half()
+
         self.model.eval()
 
     def predict(self, data):
