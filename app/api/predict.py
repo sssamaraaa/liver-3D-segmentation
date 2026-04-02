@@ -5,6 +5,7 @@ from fastapi import UploadFile, APIRouter, Request
 
 
 router_predict = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router_predict.post("/predict")
 async def predict(file: UploadFile, request: Request):
@@ -17,7 +18,7 @@ async def predict(file: UploadFile, request: Request):
 
     try:
         mask = model_service.predict(tmp_file_path)
-        logging.info(f"Success!")
+        logger.info(f"Success! Mask shape: {mask.shape}")
         return {"shape": mask.shape}
 
     except Exception as e:

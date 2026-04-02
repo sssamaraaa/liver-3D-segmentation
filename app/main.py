@@ -3,20 +3,19 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from dotenv import load_dotenv
-from app.logs.logging_conf import setup_logging
+from app.logging_conf import setup_logging
 from app.api.predict import router_predict
 from app.services.model_service import ModelService 
 
 
-load_dotenv()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    load_dotenv()
     setup_logging()
-
+    logger = logging.getLogger(__name__)
+    logger.info(f"Application starting...")
     WEIGHTS_PATH = os.getenv("WEIGHTS_PATH")
-    logging.info(f"Loading model")
+    logger.info(f"Loading model")
 
     try:
         model_service = ModelService(WEIGHTS_PATH)
@@ -24,15 +23,14 @@ async def lifespan(app: FastAPI):
         model_service.create_model()
         model_service.load_weights()
     except Exception as e:
-        logging.info(f"Error loading model: {e}")
+        logger.error(f"Error loading model: {e}")
         raise e
     
-    logging.info(f"Model loaded successfully")
-
+    logger.info(f"Model loaded successfully")
     app.state.model_service = model_service
-
     yield
+    logger.info(f"Application shutting down...")
+
 
 app = FastAPI(title="Liver Segmentation v1.0", lifespan=lifespan)
-
 app.include_router(router_predict)

@@ -7,6 +7,8 @@ ml/data
 ml/logs
 ml/model
 
+app/logs
+
 storage
 
 tests/
