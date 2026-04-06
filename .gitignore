@@ -8,11 +8,4 @@ ml/logs
 ml/model
 
 app/logs
-
-storage
-
-tests/
-
-nginx/
-!nginx/conf/nginx.conf
-!nginx/conf/nginx.docker.conf
+nginx
