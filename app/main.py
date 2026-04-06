@@ -15,11 +15,12 @@ async def lifespan(app: FastAPI):
     logger = logging.getLogger(__name__)
     logger.info(f"Application starting...")
     WEIGHTS_PATH = os.getenv("WEIGHTS_PATH")
+    DEVICE = os.getenv("DEVICE")
     logger.info(f"Loading model")
 
     try:
         model_service = ModelService(WEIGHTS_PATH)
-        model_service.set_device("cpu")
+        model_service.set_device(DEVICE)
         model_service.create_model()
         model_service.load_weights()
     except Exception as e:

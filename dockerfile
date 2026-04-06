@@ -1,10 +1,19 @@
-FROM python:3.10-slim
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y python3-pip python3-venv; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*; \
+    ln -sf /usr/bin/python3 /usr/bin/python; \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
 
 WORKDIR /proj
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir torch==2.6.0 torchvision --index-url https://download.pytorch.org/whl/cu118 && \
+    pip install --no-cache-dir -r requirements.txt
 
 COPY ml/model/unet.pth /proj/ml/model/unet.pth
 COPY ml/__init__.py /proj/ml/__init__.py
