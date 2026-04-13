@@ -12,7 +12,7 @@ async def predict(file: UploadFile, request: Request):
     content = await file.read()
     model_service = request.app.state.model_service
 
-    with tempfile.NamedTemporaryFile(suffix=".nii.gz", delete=False) as tmp_file:
+    with tempfile.NamedTemporaryFile(suffix=".nii.gz") as tmp_file:
         tmp_file.write(content)
         tmp_file_path = tmp_file.name
 
@@ -20,9 +20,8 @@ async def predict(file: UploadFile, request: Request):
         mask = model_service.predict(tmp_file_path)
         logger.info(f"Success! Mask shape: {mask.shape}")
         return {"shape": mask.shape}
-
     except Exception as e:
-        print(e)
+        logger.error(f"Catch error: {e}")
         raise e
     finally:
         os.remove(tmp_file_path)
