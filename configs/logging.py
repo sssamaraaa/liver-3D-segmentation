@@ -3,12 +3,11 @@ import sys
 import os
 
 
-def setup_logging():
-    ml_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    log_dir = os.path.join(ml_root, "logs")
+def setup_logging(root: str):
+    log_dir = os.path.join(root, "logs")
     os.makedirs(log_dir, exist_ok=True)
 
-    log_file = os.path.join(log_dir, "ml_service.log")
+    log_file = os.path.join(log_dir, "logs.log")
     error_file = os.path.join(log_dir, "errors.log")
     
     logging.basicConfig(

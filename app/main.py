@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from dotenv import load_dotenv
-from app.logging_conf import setup_logging
+from configs.logging import setup_logging
 from app.api.predict import router_predict
 from app.services.model_service import ModelService 
 
@@ -11,7 +11,7 @@ from app.services.model_service import ModelService
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_dotenv()
-    setup_logging()
+    setup_logging("app")
     logger = logging.getLogger(__name__)
     logger.info(f"Application starting...")
     WEIGHTS_PATH = os.getenv("WEIGHTS_PATH")
