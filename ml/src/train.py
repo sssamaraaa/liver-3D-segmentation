@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import matplotlib
 from sklearn.model_selection import KFold
-from logging_conf import setup_logging
+from configs.logging import setup_logging
 from glob import glob
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
@@ -19,7 +19,7 @@ from utils import save_checkpoint, seed_everything, worker_init_fn, save_metrics
 
 # utils
 matplotlib.use("Agg")
-setup_logging()
+setup_logging("ml")
 logger = logging.getLogger(__name__)
 
 def setup_env(args):
@@ -302,5 +302,3 @@ if __name__ == "__main__":
             logger.info(f"Fold {fold_idx + 1}/{args.kfold}")
             device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion = build_finetune_pipeline(args, fold_idx)
             run_training(args, device, model, criterion, optimizer, scheduler, scaler, train_loader, val_images, val_masks, accumulation_steps=args.accumulation_steps)
-
-
