@@ -1,12 +1,35 @@
 import os
+import sys
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from dotenv import load_dotenv
-from configs.logging import setup_logging
 from app.api.predict import router_predict
 from app.services.model_service import ModelService 
 
+
+def setup_logging(root: str):
+    log_dir = os.path.join(root, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    log_file = os.path.join(log_dir, "logs.log")
+    error_file = os.path.join(log_dir, "errors.log")
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_file),  
+            logging.StreamHandler(sys.stdout)            
+        ],
+        force=True
+    )
+    
+    error_handler = logging.FileHandler(error_file)
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    
+    logging.getLogger().addHandler(error_handler)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -13,7 +13,6 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from omegaconf import DictConfig
 from hydra.utils import get_original_cwd
-from configs.logging import setup_logging
 from dataset import LiverPatchDataset, augment_ct3d, split_dataset
 from model import UNet3D
 from metrics import DiceBCELoss, dice, iou, precision, recall
@@ -34,7 +33,7 @@ def setup_env(cfg):
 
 def initialize_dataset(cfg):
     orig_cwd = get_original_cwd()
-    data_dir = os.path.join(orig_cwd, cfg.data.data_dir)
+    data_dir = os.path.join(orig_cwd, cfg.paths.dataset_dir)
 
     image_paths = sorted(glob(os.path.join(data_dir, "imagesTr_npy", "*.npy")))
     mask_paths = sorted(glob(os.path.join(data_dir, "labelsTr_npy", "*.npy")))
@@ -262,7 +261,7 @@ def run_training(cfg, device, model, criterion, optimizer, scheduler, scaler, tr
                 save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, cfg, tag="intermediate.pth")
 
             all_epoch_stats.append(val_stats)
-            save_metrics_plots(all_epoch_stats, cfg.training.output_dir_metrics)
+            save_metrics_plots(all_epoch_stats, cfg.paths.output_dir_metrics)
 
     except KeyboardInterrupt:
         logger.info("Interrupted. Saving checkpoint...")
@@ -270,16 +269,9 @@ def run_training(cfg, device, model, criterion, optimizer, scheduler, scaler, tr
         sys.exit(0)
 
 @hydra.main(config_path=ML_CONFIGS_DIR, config_name="ml_conf", version_base=None)
-def main(cfg: DictConfig):
-    hydra_loggers = ["hydra", "omegaconf"]
-    for logger_name in hydra_loggers:
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
-        logging.getLogger(logger_name).handlers.clear()
-    
-    setup_logging("ml")
-
-    os.makedirs(cfg.training.output_dir, exist_ok=True)
-    os.makedirs(cfg.training.output_dir_metrics, exist_ok=True)
+def main(cfg: DictConfig): 
+    os.makedirs(cfg.paths.output_dir_checkpoints, exist_ok=True)
+    os.makedirs(cfg.paths.output_dir_metrics, exist_ok=True)
 
     device, train_loader, val_images, val_masks, model, optimizer, scheduler, scaler, criterion = build_training_pipeline(cfg)
 

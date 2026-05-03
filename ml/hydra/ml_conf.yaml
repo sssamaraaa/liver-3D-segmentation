@@ -1,0 +1,52 @@
+hydra:
+  run:
+    dir: ml/runs/msd_liver_run5 # example
+
+  job_logging:
+    version: 1
+    formatters:
+      simple:
+        format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+        datefmt: '%Y-%m-%d %H:%M:%S'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+      all_logs:
+        class: logging.FileHandler
+        formatter: simple
+        level: INFO
+        filename: ${hydra:runtime.output_dir}/logs.log
+        mode: w
+      errors_logs:
+        class: logging.FileHandler
+        formatter: simple
+        level: ERROR
+        filename: ${hydra:runtime.output_dir}/errors.log
+        mode: w
+    root:
+      level: INFO
+      handlers: [console, all_logs, errors_logs]
+    disable_existing_loggers: False
+
+paths:
+  output_dir_checkpoints: ml/runs/msd_liver_run5/checkpoints # example
+  output_dir_metrics: ml/runs/msd_liver_run5/metrics # example
+  dataset_dir: # path to dataset
+
+defaults:
+  - _self_
+  - model: unet3d
+  - data: liver
+  - training: default
+  - inference: default
+  - override hydra/job_logging: none
+  
+experiment:
+  name: liver_segmentation_v0.1
+
+mlflow:
+  tracking_uri: http://localhost:5000
+  experiment_name: liver_segmentation_v0.1
+  run_name: default_run

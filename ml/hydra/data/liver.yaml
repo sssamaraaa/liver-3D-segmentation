@@ -1,0 +1,6 @@
+patch_size: [80, 160, 160]
+augment: true
+pos_ratio: 0.6
+patches_per_volume: 48
+val_frac: 0.15
+num_workers: 4

@@ -22,8 +22,8 @@ def worker_init_fn(worker_id):
     np.random.seed(seed + worker_id)
     random.seed(seed + worker_id)
 
-def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag=""):
-    ckpt_path = os.path.join(args.output_dir, f"{epoch}_epoch_{tag}")
+def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, cfg, tag=""):
+    ckpt_path = os.path.join(cfg.paths.output_dir_checkpoints, f"{epoch}_epoch_{tag}")
 
     torch.save({
         "epoch": epoch,
@@ -31,7 +31,7 @@ def save_checkpoint(epoch, model, optimizer, scheduler, best_val_dice, args, tag
         "optimizer_state": optimizer.state_dict(),
         "scheduler_state": scheduler.state_dict() if scheduler is not None else None,
         "best_val_dice": best_val_dice,
-        "args": vars(args),
+        "args": vars(cfg),
     }, ckpt_path)
 
     logger.info(f"[checkpoint] Saved: {ckpt_path}")

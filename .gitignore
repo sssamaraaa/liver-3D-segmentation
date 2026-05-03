@@ -4,8 +4,9 @@ __pycache__
 
 ml/src/datasets
 ml/data
-ml/logs
+ml/runs
 ml/model
 
-app/logs
-nginx
+app/logs/
+
+mlflow.db
